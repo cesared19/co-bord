@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.3.0)
+## Features (0.4.0)
 
 ### Boards
 
@@ -38,6 +38,14 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Voting**: choose the votes per person and start; everyone clicks items to vote (several times on one if they want) and clicks their badge to take a vote back. Each person only sees their own votes until the voting ends; then the totals show on the items, with a ranking that jumps to each one.
 -  Viewers see the timer and the results; editors run them.
 
+### Test coverage with SparkyTC
+
+-  An admin connects a project to a SparkyTC project (2.2.0 or later) in the project's **Settings**, with a project API token created in SparkyTC (its **Settings**, **API tokens**). The token is stored encrypted and only reads.
+-  Select a shape, sticky note, frame or media block and link it to the SparkyTC **test cases**, **suites or sections** and **test plans** that test it (the flask button in the toolbar above the selection).
+-  Linked elements show a chip with the combined result of their tests in the current build: failed, blocked, not run, skipped or passed, worst first. Click it for each test's result, who ran it, and a link to it in SparkyTC.
+-  **Coverage** (top right of the board) treats the shapes and sticky notes with text as the steps of a flow, in the whole board or one frame: the share of steps with linked tests, how they did in a build you choose, and every step in the order of the flow. Click a step to see it on the board, or download the report as CSV.
+-  Results refresh every minute.
+
 ### Real time
 
 -  Everyone on a board sees the others' changes as they happen, their cursors with their names, what each one has selected and who is typing where.
@@ -69,7 +77,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 2. ~~Live cursors, selections and changes~~ (0.1.0)
 3. ~~Embedded images, videos (YouTube, Google Drive, Vimeo, uploaded) and PDFs as resizable blocks that play and page inside the board~~ (0.2.0)
 4. ~~Templates: retrospectives (columns, votes, timer), workflows and design documents; frames~~ (0.3.0)
-5. Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage; Confluence pages embedded as blocks, and boards published to Confluence
+5. ~~Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage~~ (0.4.0); Confluence pages embedded as blocks, and boards published to Confluence
 6. Automations: card rules (for example, create a Jira issue when a note moves to a column), generate SparkyTC test cases from a flow, guided retrospectives and notifications
 
 ## Running it
@@ -95,8 +103,31 @@ co-bord is served on port 3200 (`APP_PORT`). Open it and create the admin accoun
 | `COOKIE_SECURE` | `true` once co-bord is served over HTTPS |
 | `SESSION_DAYS` | How long a sign-in lasts, 7 days by default |
 | `MAX_UPLOAD_MB` | Largest file that can be uploaded, 500 MB by default |
+| `ENCRYPTION_KEY` | Encrypts the credentials of integrations. When empty, a key is created in the `app-data` volume; keep a copy of it, or set your own |
 
 Uploaded files are kept in the `app-data` volume and the database in `db-data`; back up both.
+
+### Connecting to SparkyTC on the same server
+
+SparkyTC publishes its backend only on `127.0.0.1:8080` of the server, which containers can't reach. co-bord joins SparkyTC's Docker network instead:
+
+1. Find the network's name, for example `sparkytc_app-network`:
+
+```bash
+docker network ls
+```
+
+2. Add to `.env`:
+
+```
+COMPOSE_FILE=docker-compose.yml:docker-compose.sparkytc.yml
+SPARKYTC_NETWORK=sparkytc_app-network
+```
+
+3. Run `docker compose up -d --build`, and in the project's Settings in co-bord connect with:
+   -  **SparkyTC API address**: `http://backend-service:8080`
+   -  **Address people open**: SparkyTC's web address, such as `http://192.168.1.20:3000`
+   -  **Project API token**: created in SparkyTC's project Settings, under API tokens.
 
 To update, pull the new version and run `docker compose up -d --build` again; the database is migrated on start.
 

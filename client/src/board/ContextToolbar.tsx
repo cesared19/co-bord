@@ -1,4 +1,5 @@
 import {
+	FlaskConical,
 	Download,
 	ExternalLink,
 	Frame,
@@ -43,6 +44,8 @@ interface Props {
 	onEditText: () => void
 	onWrapInFrame: () => void
 	onExportFrame: (id: string) => void
+	/** The SparkyTC link picker for one element, when the project is connected. */
+	linkEditor?: (el: BoardElement) => ReactNode
 }
 
 const btn =
@@ -59,6 +62,7 @@ export function ContextToolbar({
 	onEditText,
 	onWrapInFrame,
 	onExportFrame,
+	linkEditor,
 }: Props) {
 	const ref = useRef<HTMLDivElement>(null)
 	const [pos, setPos] = useState({ left: 0, top: 0 })
@@ -347,6 +351,22 @@ export function ContextToolbar({
 						<ExternalLink size={16} />
 						<span className="sr-only">Open in a new tab</span>
 					</a>
+					<Divider />
+				</>
+			)}
+			{linkEditor && selected.length === 1 && selected[0].type !== 'connector' && (
+				<>
+					<Popover
+						label="Linked tests (SparkyTC)"
+						button={
+							<span className="flex items-center gap-1">
+								<FlaskConical size={16} />
+								{selected[0].links?.length ? <span className="text-xs tabular-nums">{selected[0].links.length}</span> : null}
+							</span>
+						}
+					>
+						{() => linkEditor(selected[0])}
+					</Popover>
 					<Divider />
 				</>
 			)}

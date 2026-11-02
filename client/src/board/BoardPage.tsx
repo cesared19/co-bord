@@ -9,6 +9,7 @@ import { useIsDark } from '../lib/theme'
 import { Canvas } from './Canvas'
 import { download, renderPng } from './exportPng'
 import { PresenceAvatars } from './Presence'
+import { useSparkyInfo } from './sparky'
 import { type BoardConnection, type Peer, useBoardConnection, useBoardDoc } from './useBoardDoc'
 
 export default function BoardPage() {
@@ -66,6 +67,7 @@ function BoardSession({
 	const readOnly = !canEdit(board.role)
 	const { store, provider } = connection
 	const { elements, peers, status, synced } = useBoardDoc(connection, user, readOnly)
+	const sparky = useSparkyInfo(board.projectId)
 	const [copied, setCopied] = useState(false)
 	const [jumpTo, setJumpTo] = useState<Peer | null>(null)
 
@@ -174,6 +176,8 @@ function BoardSession({
 						jumpTo={jumpTo}
 						user={user}
 						boardName={board.name}
+						projectId={board.projectId}
+						sparky={sparky}
 					/>
 				)}
 			</div>

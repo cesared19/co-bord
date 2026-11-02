@@ -16,12 +16,15 @@ import { boardRoutes } from './routes/boards.js'
 import { projectRoutes } from './routes/projects.js'
 import { userRoutes } from './routes/users.js'
 import { FileStorage } from './storage.js'
+import { SecretBox } from './crypto.js'
+import { sparkyRoutes } from './routes/sparkytc.js'
 
 export async function buildApp(config: Config, db: Db, opts: { logger?: boolean } = {}) {
 	const app = Fastify({ logger: opts.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024 })
 	const storage = new FileStorage(config.dataDir)
 	await storage.init()
-	const ctx: Ctx = { db, config, storage }
+	const secrets = SecretBox.load(config.dataDir, config.encryptionKey)
+	const ctx: Ctx = { db, config, storage, secrets }
 
 	await app.register(fastifyCookie)
 	await app.register(fastifyMultipart)
@@ -40,6 +43,7 @@ export async function buildApp(config: Config, db: Db, opts: { logger?: boolean 
 	projectRoutes(app, ctx)
 	boardRoutes(app, ctx)
 	assetRoutes(app, ctx)
+	sparkyRoutes(app, ctx)
 
 	const collab = createCollab(ctx)
 	app.get('/collab', { websocket: true }, (socket, req) => collab.handle(socket, req.raw))

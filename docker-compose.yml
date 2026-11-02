@@ -21,6 +21,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SESSION_DAYS: ${SESSION_DAYS:-7}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
     volumes:
       - app-data:/data
     ports:

@@ -78,6 +78,15 @@ const migrations: { version: string; sql: string }[] = [
 			CREATE INDEX assets_project_id_idx ON assets (project_id);
 		`,
 	},
+	{
+		version: '0.0.3',
+		sql: `
+			-- SparkyTC connection: API address, address people open, and the project API token (encrypted)
+			ALTER TABLE projects ADD COLUMN sparkytc_url TEXT;
+			ALTER TABLE projects ADD COLUMN sparkytc_public_url TEXT;
+			ALTER TABLE projects ADD COLUMN sparkytc_token TEXT;
+		`,
+	},
 ]
 
 export async function migrate(db: Db): Promise<void> {

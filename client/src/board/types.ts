@@ -12,6 +12,13 @@ export type ShapeKind =
 
 export type Align = 'left' | 'center' | 'right'
 
+/** A SparkyTC test case (id = its number), section or suite (id = section id) or test plan (id = plan id). */
+export interface SparkyLink {
+	kind: 'case' | 'section' | 'plan'
+	id: string
+	label: string
+}
+
 interface Box {
 	id: string
 	z: number
@@ -19,6 +26,8 @@ interface Box {
 	y: number
 	w: number
 	h: number
+	/** What this element is tested by, in SparkyTC. */
+	links?: SparkyLink[]
 }
 
 export interface TextStyle {

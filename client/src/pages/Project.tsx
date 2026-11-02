@@ -1,6 +1,7 @@
 import { Copy, LayoutDashboard, Pencil, Plus, Trash2, UserMinus } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { SparkyConnection } from '../components/SparkyConnection'
 import { Avatar, Button, ErrorText, Field, Modal, PageHeader, RoleBadge, Select, Spinner } from '../components/ui'
 import { api, type BoardInfo, canEdit, type Member, type Project as ProjectInfo, type Role } from '../lib/api'
 import { useUser } from '../lib/auth'
@@ -386,6 +387,7 @@ function Settings({ project, onSaved }: { project: ProjectInfo; onSaved: () => v
 					{saved && <span className="text-sm text-green-700 dark:text-green-400">Saved</span>}
 				</div>
 			</form>
+			<SparkyConnection projectId={project.id} />
 			{me.isAdmin && (
 				<section className="rounded-xl border border-red-200 p-4 dark:border-red-900">
 					<h2 className="font-medium">Delete project</h2>

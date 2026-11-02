@@ -7,6 +7,8 @@ export interface Config {
 	/** Where uploaded files are kept. */
 	dataDir: string
 	maxUploadBytes: number
+	/** Key for the credentials of integrations; generated in DATA_DIR when missing. */
+	encryptionKey?: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -20,5 +22,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 		clientDir: env.CLIENT_DIR ?? null,
 		dataDir: env.DATA_DIR ?? './data',
 		maxUploadBytes: Number(env.MAX_UPLOAD_MB ?? 500) * 1024 * 1024,
+		encryptionKey: env.ENCRYPTION_KEY || undefined,
 	}
 }
