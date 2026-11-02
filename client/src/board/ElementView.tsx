@@ -1,6 +1,16 @@
 import { memo, useEffect, useRef } from 'react'
-import { arrowHead, connectorGeometry, type ElementMap, resolveStroke, resolveTextColor, shapePath, textInsets } from './geometry'
-import type { ConnectorElement, TextBox } from './types'
+import {
+	arrowHead,
+	connectorGeometry,
+	type ElementMap,
+	frameBorder,
+	resolveFrameFill,
+	resolveStroke,
+	resolveTextColor,
+	shapePath,
+	textInsets,
+} from './geometry'
+import type { ConnectorElement, FrameElement, TextBox } from './types'
 
 const FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
 export const LINE_HEIGHT = 1.3
@@ -255,3 +265,87 @@ export const ConnectorView = memo(
 		return true
 	},
 )
+
+/** Title height above a frame, in screen pixels. */
+export const FRAME_TITLE = 24
+
+/**
+ * The frame's area lets clicks through to the board (to draw or select inside it);
+ * the frame is picked by its title, which keeps the same size at any zoom.
+ */
+export const FrameView = memo(function FrameView({
+	el,
+	zoom,
+	dark,
+	editing,
+	onTitle,
+	onEditEnd,
+}: {
+	el: FrameElement
+	zoom: number
+	dark: boolean
+	editing: boolean
+	onTitle: (id: string, title: string) => void
+	onEditEnd: () => void
+}) {
+	// constant on screen down to 60% zoom; further out it shrinks with the board so nested titles don't collide
+	const scale = 1 / Math.max(zoom, 0.6)
+	const border = 1 / zoom
+	return (
+		<>
+			<div
+				style={{
+					position: 'absolute',
+					left: el.x,
+					top: el.y,
+					width: el.w,
+					height: el.h,
+					background: resolveFrameFill(el.fill, dark),
+					border: `${border}px solid ${frameBorder(dark)}`,
+					borderRadius: 6,
+					pointerEvents: 'none',
+				}}
+			/>
+			<div
+				data-el={el.id}
+				style={{
+					position: 'absolute',
+					left: el.x,
+					top: el.y - FRAME_TITLE * scale,
+					height: FRAME_TITLE * scale,
+					maxWidth: el.w,
+					display: 'flex',
+					alignItems: 'center',
+					fontFamily: FONT,
+					fontSize: 13 * scale,
+					fontWeight: 600,
+					color: dark ? '#d1d5db' : '#4b5563',
+					whiteSpace: 'nowrap',
+					overflow: 'hidden',
+					textOverflow: 'ellipsis',
+					cursor: 'move',
+				}}
+			>
+				{editing ? (
+					<input
+						autoFocus
+						value={el.title}
+						aria-label="Frame title"
+						onFocus={(e) => e.target.select()}
+						size={Math.max(8, el.title.length + 1)}
+						onPointerDown={(e) => e.stopPropagation()}
+						onKeyDown={(e) => {
+							e.stopPropagation()
+							if (e.key === 'Escape' || e.key === 'Enter') onEditEnd()
+						}}
+						onBlur={onEditEnd}
+						onChange={(e) => onTitle(el.id, e.target.value)}
+						style={{ font: 'inherit', color: 'inherit', background: 'transparent', border: 'none', outline: 'none', padding: 0 }}
+					/>
+				) : (
+					el.title || 'Frame'
+				)}
+			</div>
+		</>
+	)
+})

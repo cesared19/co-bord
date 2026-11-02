@@ -1,5 +1,21 @@
-import { Hand, ImagePlus, Maximize, Minus, MousePointer2, MoveUpRight, Plus, Redo2, StickyNote, Type, Undo2, Upload } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import {
+	Frame,
+	Hand,
+	ImagePlus,
+	LayoutTemplate,
+	Maximize,
+	Minus,
+	MousePointer2,
+	MoveUpRight,
+	Plus,
+	Redo2,
+	StickyNote,
+	Timer,
+	Type,
+	Undo2,
+	Upload,
+} from 'lucide-react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { shapePath } from './geometry'
 import { SHAPES, type ShapeKind, type Tool } from './types'
 
@@ -61,11 +77,14 @@ interface ToolbarProps {
 	onUndo: () => void
 	onRedo: () => void
 	onFiles: (files: File[]) => void
+	onTemplates: () => void
+	/** Timer and voting controls, shown in a popover. */
+	facilitation: ReactNode
 	/** Returns an error to show, or null when the link was added. */
 	onLink: (url: string) => string | null
 }
 
-export function Toolbar({ tool, shapeKind, onTool, onShape, onUndo, onRedo, onFiles, onLink }: ToolbarProps) {
+export function Toolbar({ tool, shapeKind, onTool, onShape, onUndo, onRedo, onFiles, onLink, onTemplates, facilitation }: ToolbarProps) {
 	const [shapesOpen, setShapesOpen] = useState(false)
 	const ref = useRef<HTMLDivElement>(null)
 	useEffect(() => {
@@ -121,6 +140,15 @@ export function Toolbar({ tool, shapeKind, onTool, onShape, onUndo, onRedo, onFi
 					<MoveUpRight size={19} />
 				</ToolButton>
 				<MediaMenu onFiles={onFiles} onLink={onLink} />
+				<ToolButton label="Frame" shortcut="F" active={tool === 'frame'} onClick={() => onTool('frame')}>
+					<Frame size={19} />
+				</ToolButton>
+				<ToolButton label="Templates" onClick={onTemplates}>
+					<LayoutTemplate size={19} />
+				</ToolButton>
+				<PopoverTool label="Timer and voting" icon={<Timer size={19} />}>
+					{facilitation}
+				</PopoverTool>
 			</div>
 			<div className={`${panel} flex flex-col gap-0.5 p-1`}>
 				<ToolButton label="Undo" shortcut="Ctrl+Z" onClick={onUndo}>
@@ -139,15 +167,19 @@ export function ZoomControls({
 	onZoom,
 	onReset,
 	onFit,
+	children,
 }: {
 	zoom: number
 	onZoom: (factor: number) => void
 	onReset: () => void
 	onFit: () => void
+	/** Shown before the zoom buttons. */
+	children?: ReactNode
 }) {
 	const btn = 'flex size-9 items-center justify-center rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
 	return (
 		<div data-ui className={`${panel} absolute right-3 bottom-3 z-10 flex items-center gap-0.5 p-1`}>
+			{children}
 			<button type="button" className={btn} title="Zoom out (Ctrl -)" onClick={() => onZoom(1 / 1.2)}>
 				<Minus size={16} />
 				<span className="sr-only">Zoom out</span>
@@ -251,6 +283,72 @@ function MediaMenu({ onFiles, onLink }: { onFiles: (files: File[]) => void; onLi
 						</p>
 					</form>
 				</div>
+			)}
+		</div>
+	)
+}
+
+function PopoverTool({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }) {
+	const [open, setOpen] = useState(false)
+	const ref = useRef<HTMLDivElement>(null)
+	useEffect(() => {
+		if (!open) return
+		const close = (e: PointerEvent) => {
+			if (!ref.current?.contains(e.target as Node)) setOpen(false)
+		}
+		window.addEventListener('pointerdown', close)
+		return () => window.removeEventListener('pointerdown', close)
+	}, [open])
+	return (
+		<div ref={ref} className="relative">
+			<ToolButton label={label} active={open} onClick={() => setOpen(!open)}>
+				{icon}
+			</ToolButton>
+			{open && <div className={`${panel} absolute bottom-0 left-12`}>{children}</div>}
+		</div>
+	)
+}
+
+/** Lists the board's frames; picking one shows it. */
+export function FramesMenu({ frames, onPick }: { frames: { id: string; title: string }[]; onPick: (id: string) => void }) {
+	const [open, setOpen] = useState(false)
+	const ref = useRef<HTMLDivElement>(null)
+	useEffect(() => {
+		if (!open) return
+		const close = (e: PointerEvent) => {
+			if (!ref.current?.contains(e.target as Node)) setOpen(false)
+		}
+		window.addEventListener('pointerdown', close)
+		return () => window.removeEventListener('pointerdown', close)
+	}, [open])
+	if (!frames.length) return null
+	return (
+		<div ref={ref} data-ui className="relative">
+			<button
+				type="button"
+				aria-expanded={open}
+				onClick={() => setOpen(!open)}
+				className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+			>
+				<Frame size={15} /> Frames <span className="text-gray-400 tabular-nums">{frames.length}</span>
+			</button>
+			{open && (
+				<ul className={`${panel} absolute right-0 bottom-11 max-h-80 w-64 overflow-auto p-1`}>
+					{frames.map((f) => (
+						<li key={f.id}>
+							<button
+								type="button"
+								onClick={() => {
+									onPick(f.id)
+									setOpen(false)
+								}}
+								className="w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+							>
+								{f.title || 'Frame'}
+							</button>
+						</li>
+					))}
+				</ul>
 			)}
 		</div>
 	)

@@ -297,3 +297,36 @@ export function resolveTextColor(el: TextBox, dark: boolean): string {
 }
 
 export const resolveStroke = (stroke: string, dark: boolean) => (stroke === 'auto' ? (dark ? '#d1d5db' : '#1f2937') : stroke)
+
+/** Everything that lies completely inside the frame (other frames included), which moves with it. */
+export function frameContents(frame: Rect & { id: string }, elements: ElementMap): string[] {
+	const ids: string[] = []
+	for (const el of elements.values()) {
+		if (el.id === frame.id) continue
+		const b = elementBounds(el, elements)
+		if (b.x >= frame.x && b.y >= frame.y && b.x + b.w <= frame.x + frame.w && b.y + b.h <= frame.y + frame.h) ids.push(el.id)
+	}
+	return ids
+}
+
+/** The selection plus whatever is inside the selected frames. */
+export function withFrameContents(ids: string[], elements: ElementMap): string[] {
+	const result = new Set(ids)
+	for (const id of ids) {
+		const el = elements.get(id)
+		if (el?.type === 'frame') for (const inner of frameContents(el, elements)) result.add(inner)
+	}
+	return [...result]
+}
+
+/** Frame tints are light; in dark mode they are mixed into the dark panel color so they stay a hint. */
+export function resolveFrameFill(fill: string, dark: boolean): string {
+	if (!dark) return fill === 'auto' ? '#ffffff' : fill
+	const panel = [0x1f, 0x23, 0x29]
+	const m = /^#([0-9a-f]{6})$/i.exec(fill)
+	if (!m) return '#1f2329'
+	const n = Number.parseInt(m[1], 16)
+	const mixed = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c, i) => Math.round(panel[i] * 0.86 + c * 0.14))
+	return `#${mixed.map((c) => c.toString(16).padStart(2, '0')).join('')}`
+}
+export const frameBorder = (dark: boolean) => (dark ? '#3a3f47' : '#d6d9de')

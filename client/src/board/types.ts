@@ -89,10 +89,21 @@ export interface MediaElement extends Box {
 	start?: number
 }
 
+/**
+ * A titled area that groups what is inside it: moving a frame moves the elements within it.
+ * Frames are always drawn below the other elements.
+ */
+export interface FrameElement extends Box {
+	type: 'frame'
+	title: string
+	/** A hex color, or 'auto' for the board's panel color. */
+	fill: string
+}
+
 /** Elements with text: shapes, sticky notes and text. */
 export type TextBox = ShapeElement | StickyElement | TextElement
 /** Every element with a position and a size. */
-export type BoxElement = TextBox | MediaElement
+export type BoxElement = TextBox | MediaElement | FrameElement
 export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 export type NewBox = DistributiveOmit<TextBox, 'id' | 'z' | 'x' | 'y'>
 export type BoardElement = BoxElement | ConnectorElement
@@ -119,7 +130,7 @@ export interface Camera {
 	zoom: number
 }
 
-export type Tool = 'select' | 'hand' | 'sticky' | 'text' | 'shape' | 'connector'
+export type Tool = 'select' | 'hand' | 'sticky' | 'text' | 'shape' | 'connector' | 'frame'
 
 export const STICKY_COLORS = ['#fef08a', '#fed7aa', '#fecdd3', '#f5d0fe', '#c7d2fe', '#bae6fd', '#bbf7d0', '#e5e7eb']
 
@@ -176,3 +187,11 @@ export const SHAPES: { kind: ShapeKind; label: string }[] = [
 	{ kind: 'cylinder', label: 'Cylinder (database)' },
 	{ kind: 'triangle', label: 'Triangle' },
 ]
+
+export const isFrame = (el: BoardElement | undefined): el is FrameElement => el?.type === 'frame'
+
+/** Light tints for frames; 'auto' follows the theme. */
+export const FRAME_COLORS = ['auto', '#f8fafc', '#fef2f2', '#fff7ed', '#fefce8', '#f0fdf4', '#ecfeff', '#eff6ff', '#f5f3ff', '#fdf2f8']
+
+/** Frames first, then everything else, each by z. */
+export const drawOrder = (a: BoardElement, b: BoardElement) => (a.type === 'frame' ? 0 : 1) - (b.type === 'frame' ? 0 : 1) || a.z - b.z

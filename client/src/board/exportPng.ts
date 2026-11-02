@@ -4,6 +4,8 @@ import {
 	connectorGeometry,
 	elementBounds,
 	type ElementMap,
+	frameBorder,
+	resolveFrameFill,
 	resolveStroke,
 	resolveTextColor,
 	shapePath,
@@ -12,7 +14,7 @@ import {
 } from './geometry'
 import { MEDIA_HEADER, mediaUrl, safeUrl } from './media'
 import { loadPdf, renderPage } from './pdf'
-import type { BoardElement, MediaElement, TextBox } from './types'
+import { type BoardElement, drawOrder, type FrameElement, type MediaElement, type TextBox } from './types'
 
 const FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
 const PADDING = 40
@@ -21,9 +23,15 @@ const MAX_SIDE = 8000
 /** Draws the board (or just `ids`) on a canvas and returns it as a PNG. */
 export async function renderPng(elements: ElementMap, dark: boolean, ids?: string[]): Promise<Blob | null> {
 	const list = (ids?.length ? ids.map((id) => elements.get(id)).filter((e): e is BoardElement => !!e) : [...elements.values()]).sort(
-		(a, b) => a.z - b.z,
+		drawOrder,
 	)
-	const bounds = unionBounds(list.map((el) => elementBounds(el, elements)))
+	// frames keep room above for their titles
+	const bounds = unionBounds(
+		list.map((el) => {
+			const b = elementBounds(el, elements)
+			return el.type === 'frame' ? { ...b, y: b.y - FRAME_TITLE, h: b.h + FRAME_TITLE } : b
+		}),
+	)
 	if (!bounds) return null
 	const width = bounds.w + PADDING * 2
 	const height = bounds.h + PADDING * 2
@@ -42,6 +50,7 @@ export async function renderPng(elements: ElementMap, dark: boolean, ids?: strin
 	for (const el of list) {
 		if (el.type === 'connector') drawConnector(ctx, el, elements, dark)
 		else if (el.type === 'media') drawMedia(ctx, el, pictures.get(el.id) ?? null, dark)
+		else if (el.type === 'frame') drawFrame(ctx, el, dark)
 		else drawBox(ctx, el, dark)
 	}
 	return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
@@ -129,6 +138,26 @@ function drawConnector(
 		ctx.textBaseline = 'middle'
 		ctx.fillText(el.label, g.mid.x, g.mid.y)
 	}
+	ctx.restore()
+}
+
+/** Frames get their title above them, so the bounds leave room for it. */
+const FRAME_TITLE = 28
+
+function drawFrame(ctx: CanvasRenderingContext2D, el: FrameElement, dark: boolean) {
+	ctx.save()
+	ctx.beginPath()
+	ctx.roundRect(el.x, el.y, el.w, el.h, 6)
+	ctx.fillStyle = resolveFrameFill(el.fill, dark)
+	ctx.fill()
+	ctx.strokeStyle = frameBorder(dark)
+	ctx.lineWidth = 1
+	ctx.stroke()
+	ctx.font = `600 16px ${FONT}`
+	ctx.fillStyle = dark ? '#d1d5db' : '#4b5563'
+	ctx.textBaseline = 'bottom'
+	ctx.textAlign = 'left'
+	ctx.fillText(ellipsis(ctx, el.title || 'Frame', el.w), el.x, el.y - 8)
 	ctx.restore()
 }
 

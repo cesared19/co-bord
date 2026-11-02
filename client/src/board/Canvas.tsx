@@ -1,6 +1,11 @@
 import type { HocuspocusProvider } from '@hocuspocus/provider'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { BoxView, ConnectorView } from './ElementView'
+import { BoxView, ConnectorView, FrameView } from './ElementView'
+import { FacilitationMenu, TimerPill, VoteBadges, VoteRanking, VotingBanner } from './Facilitation'
+import { useServerClock, useSession } from './session'
+import { TemplatePicker } from './TemplatePicker'
+import type { Template } from './templates'
+import { download, renderPng } from './exportPng'
 import { ContextToolbar } from './ContextToolbar'
 import { fitSize, keepsRatio, MEDIA_HEADER, type NewMedia, parseMediaUrl } from './media'
 import { MediaView } from './MediaView'
@@ -19,20 +24,23 @@ import {
 	toScreen,
 	toWorld,
 	unionBounds,
+	withFrameContents,
 	zoomAt,
 } from './geometry'
 import { RemoteCursors, RemoteSelections } from './Presence'
 import type { BoardStore } from './store'
-import { Toolbar, ZoomControls } from './Toolbar'
+import { FramesMenu, Toolbar, ZoomControls } from './Toolbar'
 import {
 	type BoardElement,
 	type BoxElement,
 	type Camera,
 	type ConnectorElement,
 	defaultElement,
+	drawOrder,
 	type Endpoint,
 	hasText,
 	isBox,
+	isFrame,
 	type Point,
 	type Rect,
 	type ShapeKind,
@@ -52,7 +60,7 @@ type Drag =
 	| { kind: 'move'; startWorld: Point; originals: BoardElement[]; moved: boolean; clickedId: string; collapseTo: string | null }
 	| { kind: 'resize'; handle: Handle; original: BoxElement; startWorld: Point; keepRatio: boolean }
 	| { kind: 'marquee'; startWorld: Point; current: Point; base: string[] }
-	| { kind: 'create'; type: 'shape' | 'sticky' | 'text'; startWorld: Point; current: Point }
+	| { kind: 'create'; type: 'shape' | 'sticky' | 'text' | 'frame'; startWorld: Point; current: Point }
 	| { kind: 'connect'; from: Endpoint; startWorld: Point; current: Point; target: string | null }
 	| { kind: 'endpoint'; id: string; which: 'from' | 'to'; target: string | null }
 	| { kind: 'pinch'; startDist: number; startMid: Point; startCam: Camera }
@@ -67,6 +75,8 @@ interface Props {
 	dark: boolean
 	/** Centers the view on a teammate's cursor. */
 	jumpTo: Peer | null
+	user: { id: number; displayName: string }
+	boardName: string
 }
 
 const viewKey = (boardId: string) => `co-bord:view:${boardId}`
@@ -85,7 +95,7 @@ const isTyping = (target: EventTarget | null) =>
 	target instanceof HTMLElement &&
 	(target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || !!target.closest('dialog'))
 
-export function Canvas({ store, elements, peers, provider, readOnly, boardId, dark, jumpTo }: Props) {
+export function Canvas({ store, elements, peers, provider, readOnly, boardId, dark, jumpTo, user, boardName }: Props) {
 	const containerRef = useRef<HTMLDivElement>(null)
 	const [size, setSize] = useState({ w: 0, h: 0 })
 	const savedCamera = useRef(loadCamera(boardId))
@@ -163,7 +173,21 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 		provider.setAwarenessField('editing', editing)
 	}, [provider, editing])
 
-	const sorted = useMemo(() => [...elements.values()].sort((a, b) => a.z - b.z), [elements])
+	const sorted = useMemo(() => [...elements.values()].sort(drawOrder), [elements])
+	const frames = useMemo(
+		() =>
+			sorted
+				.filter(isFrame)
+				.sort((a, b) => a.y - b.y || a.x - b.x)
+				.map((f) => ({ id: f.id, title: f.title })),
+		[sorted],
+	)
+
+	useServerClock()
+	const session = useSession(store, user.id)
+	const voting = session.voting?.active ?? false
+	const [showRanking, setShowRanking] = useState(false)
+	const [showTemplates, setShowTemplates] = useState(false)
 
 	const localPoint = (e: { clientX: number; clientY: number }): Point => {
 		const rect = containerRef.current!.getBoundingClientRect()
@@ -185,7 +209,9 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 
 	/** Topmost box under a world point. */
 	const boxAt = useCallback((p: Point, exclude?: string): BoxElement | null => {
-		const list = [...elementsRef.current.values()].filter(isBox).sort((a, b) => b.z - a.z)
+		const list = [...elementsRef.current.values()]
+			.filter((el): el is BoxElement => isBox(el) && el.type !== 'frame')
+			.sort((a, b) => b.z - a.z)
 		return list.find((el) => el.id !== exclude && contains(el, p)) ?? null
 	}, [])
 
@@ -219,6 +245,7 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 	)
 
 	const onLabel = useCallback((id: string, label: string) => store.update([[id, { label }]]), [store])
+	const onTitle = useCallback((id: string, title: string) => store.update([[id, { title }]]), [store])
 
 	const startEditing = useCallback(
 		(id: string) => {
@@ -229,6 +256,22 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 			setEditing(id)
 		},
 		[readOnly, store],
+	)
+
+	/** A frame; drawn around what it covers, or 800 x 560 where clicked. */
+	const createFrame = useCallback(
+		(rect: Rect | Point, title = 'Frame') => {
+			const r: Rect = 'w' in rect ? rect : { x: rect.x - 400, y: rect.y - 280, w: 800, h: 560 }
+			store.checkpoint()
+			const [id] = store.add([
+				{ type: 'frame', title, fill: 'auto', x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) },
+			])
+			store.checkpoint()
+			setTool('select')
+			setSelection([id])
+			return id
+		},
+		[store],
 	)
 
 	const createBox = useCallback(
@@ -259,8 +302,9 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 	/** The selected elements, with connector ends that point outside the selection made free. */
 	const detachedSelection = useCallback((): BoardElement[] => {
 		const all = elementsRef.current
-		const ids = new Set(selectionRef.current)
-		return selectionRef.current
+		const selected = withFrameContents(selectionRef.current, all)
+		const ids = new Set(selected)
+		return selected
 			.map((id) => all.get(id))
 			.filter((el): el is BoardElement => !!el)
 			.map((el) => {
@@ -390,6 +434,52 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 		[readOnly, boardId, insertMedia, freeSpot],
 	)
 
+	// ---------- frames and templates ----------
+
+	const wrapInFrame = useCallback(() => {
+		const all = elementsRef.current
+		const bounds = unionBounds(
+			selectionRef.current
+				.map((id) => all.get(id))
+				.filter((el): el is BoardElement => !!el)
+				.map((el) => elementBounds(el, all)),
+		)
+		if (!bounds) return
+		const pad = 40
+		const id = createFrame({ x: bounds.x - pad, y: bounds.y - pad, w: bounds.w + pad * 2, h: bounds.h + pad * 2 })
+		setEditing(id)
+	}, [createFrame])
+
+	const exportFrame = useCallback(
+		async (id: string) => {
+			const all = elementsRef.current
+			const frame = all.get(id)
+			if (frame?.type !== 'frame') return
+			const blob = await renderPng(all, dark, withFrameContents([id], all))
+			if (blob) download(blob, `${(frame.title || boardName).replace(/[\\/:*?"<>|]+/g, '_')}.png`)
+		},
+		[dark, boardName],
+	)
+
+	const insertTemplate = useCallback(
+		(template: Template) => {
+			if (readOnly) return
+			const items = template.build()
+			const source = new Map(items.map((el) => [el.id, el]))
+			const bounds = unionBounds(items.map((el) => elementBounds(el, source)))
+			if (!bounds) return
+			const center = toWorld(cameraRef.current, { x: size.w / 2, y: size.h / 2 })
+			const spot = freeSpot({ x: center.x - bounds.w / 2, y: center.y - bounds.h / 2, w: bounds.w, h: bounds.h + 40 })
+			store.checkpoint()
+			store.clone(items, { x: Math.round(spot.x - bounds.x), y: Math.round(spot.y + 40 - bounds.y) }, source)
+			store.checkpoint()
+			setTool('select')
+			setSelection([])
+			setCamera(fitCamera({ x: spot.x, y: spot.y, w: bounds.w, h: bounds.h + 40 }, size.w, size.h, 60, 1))
+		},
+		[readOnly, store, size, freeSpot],
+	)
+
 	// ---------- camera ----------
 
 	const zoomBy = useCallback(
@@ -492,7 +582,7 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 			return
 		}
 
-		if (tool === 'sticky' || tool === 'text' || tool === 'shape') {
+		if (tool === 'sticky' || tool === 'text' || tool === 'shape' || tool === 'frame') {
 			if (readOnly) return
 			drag.current = { kind: 'create', type: tool, startWorld: world, current: world }
 			return
@@ -512,6 +602,12 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 
 		// select tool
 		if (id) {
+			// while voting, a click is a vote
+			const target = elementsRef.current.get(id)
+			if (voting && !readOnly && target && target.type !== 'connector' && target.type !== 'frame' && !e.shiftKey) {
+				session.session.vote(user.id, id)
+				return
+			}
 			const current = selectionRef.current
 			let next = current
 			let collapseTo: string | null = null
@@ -525,7 +621,9 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 			drag.current = {
 				kind: 'move',
 				startWorld: world,
-				originals: next.map((x) => all.get(x)).filter((x): x is BoardElement => !!x),
+				originals: withFrameContents(next, all)
+					.map((x) => all.get(x))
+					.filter((x): x is BoardElement => !!x),
 				moved: false,
 				clickedId: id,
 				collapseTo,
@@ -583,7 +681,13 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 				d.current = world
 				const r = rectFromPoints(d.startWorld, world)
 				const all = elementsRef.current
-				const hit = [...all.values()].filter((el) => intersects(r, elementBounds(el, all))).map((el) => el.id)
+				// frames only when the box covers them whole, so selecting inside a frame doesn't pick it
+				const hit = [...all.values()]
+					.filter((el) => {
+						const b = elementBounds(el, all)
+						return el.type === 'frame' ? b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h : intersects(r, b)
+					})
+					.map((el) => el.id)
 				setSelection([...new Set([...d.base, ...hit])])
 				rerender()
 				return
@@ -643,7 +747,8 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					;(rect as Rect).w = side
 					;(rect as Rect).h = side
 				}
-				createBox(d.type, rect, d.type !== 'shape')
+				if (d.type === 'frame') createFrame(dragged ? (rect as Rect) : d.startWorld)
+				else createBox(d.type, rect, d.type !== 'shape')
 				break
 			}
 			case 'connect': {
@@ -758,7 +863,7 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
 					const all = elementsRef.current
 					store.update(
-						selectionRef.current
+						withFrameContents(selectionRef.current, all)
 							.map((id) => all.get(id))
 							.filter((el): el is BoardElement => !!el)
 							.map((el): [string, Partial<BoardElement>] => {
@@ -770,7 +875,16 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					return
 				}
 			}
-			const tools: Record<string, Tool> = { v: 'select', h: 'hand', n: 'sticky', t: 'text', s: 'shape', r: 'shape', l: 'connector' }
+			const tools: Record<string, Tool> = {
+				v: 'select',
+				h: 'hand',
+				n: 'sticky',
+				t: 'text',
+				s: 'shape',
+				r: 'shape',
+				l: 'connector',
+				f: 'frame',
+			}
 			if (tools[key] && (!readOnly || key === 'v' || key === 'h')) {
 				if (key === 'r') setShapeKind('rect')
 				setTool(tools[key])
@@ -932,6 +1046,16 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 								onLabel={onLabel}
 								onEditEnd={finishEditing}
 							/>
+						) : el.type === 'frame' ? (
+							<FrameView
+								key={el.id}
+								el={el}
+								zoom={camera.zoom}
+								dark={dark}
+								editing={editing === el.id}
+								onTitle={onTitle}
+								onEditEnd={finishEditing}
+							/>
 						) : el.type === 'media' ? (
 							<MediaView key={el.id} el={el} dark={dark} active={!d && liveSelection.length === 1 && liveSelection[0] === el.id} />
 						) : (
@@ -996,29 +1120,30 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 									/>
 								)
 							})}
-							{SIDES.map((side) => {
-								const p = toScreen(camera, sidePoint(single, side))
-								const off = 22
-								const pos =
-									side === 'top'
-										? { x: p.x, y: p.y - off }
-										: side === 'bottom'
-											? { x: p.x, y: p.y + off }
-											: side === 'left'
-												? { x: p.x - off, y: p.y }
-												: { x: p.x + off, y: p.y }
-								return (
-									<div
-										key={side}
-										data-handle={`connect:${side}`}
-										title="Drag to connect"
-										className="pointer-events-auto absolute flex size-4 -translate-x-1/2 -translate-y-1/2 cursor-crosshair items-center justify-center rounded-full border-2 border-brand-500 bg-white text-[10px] leading-none font-bold text-brand-600 hover:scale-125"
-										style={{ left: pos.x, top: pos.y }}
-									>
-										+
-									</div>
-								)
-							})}
+							{single.type !== 'frame' &&
+								SIDES.map((side) => {
+									const p = toScreen(camera, sidePoint(single, side))
+									const off = 22
+									const pos =
+										side === 'top'
+											? { x: p.x, y: p.y - off }
+											: side === 'bottom'
+												? { x: p.x, y: p.y + off }
+												: side === 'left'
+													? { x: p.x - off, y: p.y }
+													: { x: p.x + off, y: p.y }
+									return (
+										<div
+											key={side}
+											data-handle={`connect:${side}`}
+											title="Drag to connect"
+											className="pointer-events-auto absolute flex size-4 -translate-x-1/2 -translate-y-1/2 cursor-crosshair items-center justify-center rounded-full border-2 border-brand-500 bg-white text-[10px] leading-none font-bold text-brand-600 hover:scale-125"
+											style={{ left: pos.x, top: pos.y }}
+										>
+											+
+										</div>
+									)
+								})}
 						</>
 					)}
 					{single?.type === 'connector' &&
@@ -1045,6 +1170,7 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					{d?.kind === 'create' && (
 						<div className="absolute border-2 border-dashed border-brand-500" style={screenRect(rectFromPoints(d.startWorld, d.current))} />
 					)}
+					<VoteBadges session={session.session} state={session} elements={elements} camera={camera} userId={user.id} />
 					<RemoteCursors peers={peers} camera={camera} />
 				</div>
 			</div>
@@ -1088,6 +1214,33 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 				</div>
 			)}
 
+			{(session.timer || session.voting || showRanking) && (
+				<div data-ui className="absolute top-3 left-1/2 z-20 flex max-w-[calc(100%-120px)] -translate-x-1/2 flex-col items-center gap-2">
+					<TimerPill session={session.session} state={session} canControl={!readOnly} />
+					<VotingBanner session={session.session} state={session} canControl={!readOnly} onResults={() => setShowRanking(!showRanking)} />
+					{showRanking && session.voting && !session.voting.active && (
+						<VoteRanking
+							state={session}
+							elements={elements}
+							onClose={() => setShowRanking(false)}
+							onPick={(id) => {
+								setSelection([id])
+								fit([id])
+							}}
+						/>
+					)}
+				</div>
+			)}
+			{showTemplates && (
+				<TemplatePicker
+					onClose={() => setShowTemplates(false)}
+					onPick={(template) => {
+						setShowTemplates(false)
+						insertTemplate(template)
+					}}
+				/>
+			)}
+
 			{elements.size === 0 && !readOnly && (
 				<div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-gray-500">
 					Pick a tool on the left to add sticky notes, shapes, text and connectors.
@@ -1114,6 +1267,8 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 						insertMedia([media], viewCenter())
 						return null
 					}}
+					onTemplates={() => setShowTemplates(true)}
+					facilitation={<FacilitationMenu session={session.session} state={session} userName={user.displayName} />}
 				/>
 			)}
 			<ZoomControls
@@ -1121,7 +1276,15 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 				onZoom={(f) => zoomBy(f)}
 				onReset={() => setCamera((c) => zoomAt(c, { x: size.w / 2, y: size.h / 2 }, 1))}
 				onFit={() => fit()}
-			/>
+			>
+				<FramesMenu
+					frames={frames}
+					onPick={(id) => {
+						setSelection([id])
+						fit([id])
+					}}
+				/>
+			</ZoomControls>
 			{!readOnly && selectedEls.length > 0 && selectionBounds && !d && editing === null && (
 				<ContextToolbar
 					store={store}
@@ -1131,6 +1294,8 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					onDelete={deleteSelection}
 					onDuplicate={duplicate}
 					onEditText={() => single && startEditing(single.id)}
+					onWrapInFrame={wrapInFrame}
+					onExportFrame={exportFrame}
 				/>
 			)}
 		</div>
