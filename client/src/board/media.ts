@@ -104,6 +104,8 @@ export function openUrl(el: MediaElement): string | null {
 			return `https://drive.google.com/file/d/${id}/view`
 		case 'vimeo':
 			return `https://vimeo.com/${id}`
+		case 'confluence':
+			return null
 		default:
 			return safeUrl(mediaUrl(el))
 	}
@@ -127,4 +129,5 @@ export function fitSize(w: number, h: number, max: number): { w: number; h: numb
 	return { w: Math.max(40, Math.round(w * scale)), h: Math.max(40, Math.round(h * scale)) }
 }
 
-export const keepsRatio = (el: { type: string; kind?: MediaKind }) => el.type === 'sticky' || (el.type === 'media' && el.kind !== 'link')
+export const keepsRatio = (el: { type: string; kind?: MediaKind }) =>
+	el.type === 'sticky' || (el.type === 'media' && el.kind !== 'link' && el.kind !== 'confluence')
