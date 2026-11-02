@@ -62,6 +62,22 @@ const migrations: { version: string; sql: string }[] = [
 			CREATE INDEX boards_project_id_idx ON boards (project_id);
 		`,
 	},
+	{
+		version: '0.0.2',
+		sql: `
+			CREATE TABLE assets (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				project_id INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+				board_id UUID REFERENCES boards (id) ON DELETE SET NULL,
+				name TEXT NOT NULL,
+				content_type TEXT NOT NULL,
+				size BIGINT NOT NULL,
+				created_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+			);
+			CREATE INDEX assets_project_id_idx ON assets (project_id);
+		`,
+	},
 ]
 
 export async function migrate(db: Db): Promise<void> {

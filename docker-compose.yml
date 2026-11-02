@@ -20,6 +20,9 @@ services:
       DATABASE_URL: postgres://cobord:${DB_PASSWORD}@db:5432/cobord
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SESSION_DAYS: ${SESSION_DAYS:-7}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
+    volumes:
+      - app-data:/data
     ports:
       - '${APP_PORT:-3200}:8080'
     depends_on:
@@ -29,3 +32,4 @@ services:
 
 volumes:
   db-data:
+  app-data:

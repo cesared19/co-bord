@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.1.0)
+## Features (0.2.0)
 
 ### Boards
 
@@ -13,7 +13,15 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Connectors**: drag from a shape's **+** handles, or use the Connector tool, from one element to another. They stay attached when elements move, and can be straight, elbow or curved, with arrows, dashes, color, width and a label. Drag a connector's end to attach it somewhere else.
 -  **Editing**: select with a click, Shift + click or a selection box; move, resize (Shift keeps the proportions; sticky notes always do), change colors, text size, bold and alignment from the toolbar above the selection, bring to front or send to back, duplicate (Ctrl D), copy and paste (also between boards), delete, and move with the arrow keys.
 -  **Undo and redo** (Ctrl Z, Ctrl Shift Z) undo your own changes only, never a teammate's.
--  **Download as PNG** of the whole board.
+-  **Download as PNG** of the whole board, with images and the first page of PDFs.
+
+### Images, videos and PDFs
+
+-  **Upload** images (PNG, JPEG, GIF, WebP, SVG), videos (MP4, WebM, Ogg, MOV) and PDFs from the media button, or **drop** or **paste** them on the board. Several files are laid out side by side; uploads show their progress.
+-  **Embed links** from YouTube (including Shorts and a start time), Google Drive and Vimeo, or links to an image, a video or a PDF. Pasting such a link on the board embeds it too; other web links become a link card.
+-  Every block is resized like any element (keeping its proportions from the corners) and can be connected to shapes.
+-  **Videos play inside the board** and **PDFs page inside their block**: click a block to select it, then use its player or page buttons; drag it by its title bar. Playback and the PDF page are per person. The title bar opens the original in a new tab.
+-  Google Drive files play for people who can open them in Google Drive. Uploaded files are visible only to the project's members.
 -  Light, dark or system theme.
 
 ### Real time
@@ -45,7 +53,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 1. ~~Boards with shapes, sticky notes, text and connectors~~ (0.1.0)
 2. ~~Live cursors, selections and changes~~ (0.1.0)
-3. Embedded images, videos (YouTube, Google Drive, uploaded) and PDFs as resizable blocks that play and page inside the board
+3. ~~Embedded images, videos (YouTube, Google Drive, Vimeo, uploaded) and PDFs as resizable blocks that play and page inside the board~~ (0.2.0)
 4. Templates: retrospectives (columns, votes, timer), workflows and design documents
 5. Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage; Confluence pages embedded as blocks, and boards published to Confluence
 6. Automations: card rules (for example, create a Jira issue when a note moves to a column), generate SparkyTC test cases from a flow, guided retrospectives and notifications
@@ -72,6 +80,9 @@ co-bord is served on port 3200 (`APP_PORT`). Open it and create the admin accoun
 | `APP_PORT` | Port on the host, 3200 by default |
 | `COOKIE_SECURE` | `true` once co-bord is served over HTTPS |
 | `SESSION_DAYS` | How long a sign-in lasts, 7 days by default |
+| `MAX_UPLOAD_MB` | Largest file that can be uploaded, 500 MB by default |
+
+Uploaded files are kept in the `app-data` volume and the database in `db-data`; back up both.
 
 To update, pull the new version and run `docker compose up -d --build` again; the database is migrated on start.
 

@@ -1,4 +1,7 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createDb, type Db, migrate } from '../src/db.js'
@@ -18,7 +21,15 @@ export async function startEnv(): Promise<TestEnv> {
 	await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public')
 	await migrate(db)
 	const { app } = await buildApp(
-		{ port: 0, databaseUrl: container.getConnectionUri(), cookieSecure: false, sessionDays: 7, clientDir: null },
+		{
+			port: 0,
+			databaseUrl: container.getConnectionUri(),
+			cookieSecure: false,
+			sessionDays: 7,
+			clientDir: null,
+			dataDir: mkdtempSync(join(tmpdir(), 'cobord-')),
+			maxUploadBytes: 1024 * 1024,
+		},
 		db,
 	)
 	const url = await app.listen({ port: 0, host: '127.0.0.1' })

@@ -4,6 +4,9 @@ export interface Config {
 	cookieSecure: boolean
 	sessionDays: number
 	clientDir: string | null
+	/** Where uploaded files are kept. */
+	dataDir: string
+	maxUploadBytes: number
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -15,5 +18,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 		cookieSecure: env.COOKIE_SECURE === 'true',
 		sessionDays: Number(env.SESSION_DAYS ?? 7),
 		clientDir: env.CLIENT_DIR ?? null,
+		dataDir: env.DATA_DIR ?? './data',
+		maxUploadBytes: Number(env.MAX_UPLOAD_MB ?? 500) * 1024 * 1024,
 	}
 }

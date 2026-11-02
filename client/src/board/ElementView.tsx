@@ -1,12 +1,12 @@
 import { memo, useEffect, useRef } from 'react'
 import { arrowHead, connectorGeometry, type ElementMap, resolveStroke, resolveTextColor, shapePath, textInsets } from './geometry'
-import type { BoxElement, ConnectorElement } from './types'
+import type { ConnectorElement, TextBox } from './types'
 
 const FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
 export const LINE_HEIGHT = 1.3
 
 interface BoxProps {
-	el: BoxElement
+	el: TextBox
 	dark: boolean
 	editing: boolean
 	onText: (id: string, text: string, height?: number) => void
@@ -90,7 +90,7 @@ function TextEditor({
 	onText,
 	onEditEnd,
 }: {
-	el: BoxElement
+	el: TextBox
 	style: React.CSSProperties
 	inset: number
 	onText: BoxProps['onText']

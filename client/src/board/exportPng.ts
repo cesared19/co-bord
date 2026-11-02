@@ -10,7 +10,9 @@ import {
 	textInsets,
 	unionBounds,
 } from './geometry'
-import type { BoardElement, BoxElement } from './types'
+import { MEDIA_HEADER, mediaUrl, safeUrl } from './media'
+import { loadPdf, renderPage } from './pdf'
+import type { BoardElement, MediaElement, TextBox } from './types'
 
 const FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
 const PADDING = 40
@@ -35,15 +37,17 @@ export async function renderPng(elements: ElementMap, dark: boolean, ids?: strin
 	ctx.fillRect(0, 0, width, height)
 	ctx.translate(PADDING - bounds.x, PADDING - bounds.y)
 	await document.fonts?.ready
+	const pictures = await loadPictures(list)
 
 	for (const el of list) {
 		if (el.type === 'connector') drawConnector(ctx, el, elements, dark)
+		else if (el.type === 'media') drawMedia(ctx, el, pictures.get(el.id) ?? null, dark)
 		else drawBox(ctx, el, dark)
 	}
 	return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
 }
 
-function drawBox(ctx: CanvasRenderingContext2D, el: BoxElement, dark: boolean) {
+function drawBox(ctx: CanvasRenderingContext2D, el: TextBox, dark: boolean) {
 	ctx.save()
 	ctx.translate(el.x, el.y)
 	if (el.type === 'shape') {
@@ -126,6 +130,113 @@ function drawConnector(
 		ctx.fillText(el.label, g.mid.x, g.mid.y)
 	}
 	ctx.restore()
+}
+
+type Picture = HTMLImageElement | HTMLCanvasElement
+
+/**
+ * Images, and the first page of uploaded PDFs. Images from other sites are only drawn when they allow it
+ * (CORS); otherwise the canvas could not be saved.
+ */
+async function loadPictures(list: BoardElement[]): Promise<Map<string, Picture>> {
+	const result = new Map<string, Picture>()
+	await Promise.all(
+		list.map(async (el) => {
+			if (el.type !== 'media') return
+			const url = safeUrl(mediaUrl(el))
+			if (!url) return
+			try {
+				if (el.kind === 'image') {
+					const img = new Image()
+					if (!url.startsWith('/')) img.crossOrigin = 'anonymous'
+					img.src = url
+					await img.decode()
+					result.set(el.id, img)
+				} else if (el.kind === 'pdf') {
+					const canvas = document.createElement('canvas')
+					await renderPage(await loadPdf(url), 1, canvas, Math.min(1600, el.w * 2))
+					result.set(el.id, canvas)
+				}
+			} catch {
+				/* drawn as a card instead */
+			}
+		}),
+	)
+	return result
+}
+
+function drawMedia(ctx: CanvasRenderingContext2D, el: MediaElement, picture: Picture | null, dark: boolean) {
+	ctx.save()
+	ctx.translate(el.x, el.y)
+	if (el.kind === 'image' && picture) {
+		const scale = Math.min(el.w / picture.width, el.h / picture.height)
+		const w = picture.width * scale
+		const h = picture.height * scale
+		ctx.drawImage(picture, (el.w - w) / 2, (el.h - h) / 2, w, h)
+		ctx.restore()
+		return
+	}
+	const header = el.kind === 'image' ? 0 : MEDIA_HEADER
+	ctx.beginPath()
+	ctx.roundRect(0, 0, el.w, el.h, 8)
+	ctx.fillStyle = dark ? '#1f2937' : '#ffffff'
+	ctx.fill()
+	ctx.strokeStyle = dark ? '#374151' : '#d1d5db'
+	ctx.lineWidth = 1
+	ctx.stroke()
+	ctx.clip()
+	if (header) {
+		ctx.fillStyle = dark ? '#111827' : '#f9fafb'
+		ctx.fillRect(0, 0, el.w, header)
+		ctx.fillStyle = dark ? '#e5e7eb' : '#1f2937'
+		ctx.font = `600 13px ${FONT}`
+		ctx.textBaseline = 'middle'
+		ctx.textAlign = 'left'
+		ctx.fillText(ellipsis(ctx, el.name, el.w - 20), 10, header / 2)
+	}
+	const body = { y: header, h: el.h - header }
+	if (el.kind === 'pdf' && picture) {
+		ctx.fillStyle = dark ? '#111827' : '#f3f4f6'
+		ctx.fillRect(0, body.y, el.w, body.h)
+		const scale = Math.min(el.w / picture.width, body.h / picture.height)
+		const w = picture.width * scale
+		const h = picture.height * scale
+		ctx.drawImage(picture, (el.w - w) / 2, body.y + (body.h - h) / 2, w, h)
+	} else if (el.kind === 'link') {
+		ctx.fillStyle = '#c01c37'
+		ctx.font = `400 13px ${FONT}`
+		ctx.textBaseline = 'middle'
+		ctx.fillText(ellipsis(ctx, el.src, el.w - 20), 10, body.y + body.h / 2)
+	} else {
+		// videos and pictures that could not be loaded: a dark panel with a play sign
+		ctx.fillStyle = '#111827'
+		ctx.fillRect(0, body.y, el.w, body.h)
+		const r = Math.min(28, body.h / 4)
+		const cx = el.w / 2
+		const cy = body.y + body.h / 2
+		ctx.fillStyle = 'rgba(255,255,255,0.9)'
+		ctx.beginPath()
+		if (el.kind === 'pdf' || el.kind === 'image') {
+			ctx.font = `400 13px ${FONT}`
+			ctx.textAlign = 'center'
+			ctx.textBaseline = 'middle'
+			ctx.fillText(el.kind === 'pdf' ? 'PDF' : 'Image', cx, cy)
+		} else {
+			ctx.moveTo(cx - r * 0.5, cy - r * 0.7)
+			ctx.lineTo(cx + r * 0.8, cy)
+			ctx.lineTo(cx - r * 0.5, cy + r * 0.7)
+			ctx.closePath()
+			ctx.fill()
+		}
+	}
+	ctx.restore()
+}
+
+function ellipsis(ctx: CanvasRenderingContext2D, text: string, width: number): string {
+	if (ctx.measureText(text).width <= width) return text
+	let out = text
+	while (out.length > 1 && ctx.measureText(`${out}…`).width > width) out = out.slice(0, -1)
+	return `${out}…`
 }
 
 function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {

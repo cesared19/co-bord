@@ -2,11 +2,13 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { SESSION_COOKIE, type User, userForToken } from './auth.js'
 import type { Config } from './config.js'
 import type { Db } from './db.js'
+import type { FileStorage } from './storage.js'
 import { forbidden, unauthorized } from './errors.js'
 
 export interface Ctx {
 	db: Db
 	config: Config
+	storage: FileStorage
 	/** Set by the collaboration server: closes live connections of a deleted board. */
 	onBoardDeleted?: (boardId: string) => void
 	/** Set by the collaboration server: stores pending changes of a board now. */

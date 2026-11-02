@@ -2,6 +2,9 @@ import type { HocuspocusProvider } from '@hocuspocus/provider'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BoxView, ConnectorView } from './ElementView'
 import { ContextToolbar } from './ContextToolbar'
+import { fitSize, keepsRatio, MEDIA_HEADER, type NewMedia, parseMediaUrl } from './media'
+import { MediaView } from './MediaView'
+import { readMediaSize, uploadAsset } from './upload'
 import {
 	type ConnectorGeometry,
 	connectorGeometry,
@@ -28,10 +31,12 @@ import {
 	type ConnectorElement,
 	defaultElement,
 	type Endpoint,
+	hasText,
 	isBox,
 	type Point,
 	type Rect,
 	type ShapeKind,
+	type TextBox,
 	type Tool,
 } from './types'
 import type { Peer } from './useBoardDoc'
@@ -197,7 +202,7 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 		setEditing(null)
 		if (id) {
 			const el = store.get(id)
-			if (el && isBox(el) && !el.text.trim()) store.remove([id])
+			if (el && hasText(el) && !el.text.trim()) store.remove([id])
 		}
 		store.checkpoint()
 	}, [store])
@@ -205,8 +210,8 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 	const onText = useCallback(
 		(id: string, text: string, height?: number) => {
 			const el = store.get(id)
-			if (!el || !isBox(el)) return
-			const patch: Partial<BoxElement> = { text }
+			if (!el || !hasText(el)) return
+			const patch: Partial<TextBox> = { text }
 			if (height !== undefined && el.type === 'text') patch.h = Math.max(32, Math.ceil(height))
 			store.update([[id, patch]])
 		},
@@ -217,7 +222,8 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 
 	const startEditing = useCallback(
 		(id: string) => {
-			if (readOnly) return
+			const el = elementsRef.current.get(id)
+			if (readOnly || !el || el.type === 'media') return
 			store.checkpoint()
 			setSelection([id])
 			setEditing(id)
@@ -276,6 +282,114 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 		setSelection(store.clone(items, { x: 24, y: 24 }, new Map(items.map((el) => [el.id, el]))))
 	}, [readOnly, store, detachedSelection])
 
+	// ---------- media ----------
+
+	const [uploads, setUploads] = useState<{ id: string; name: string; progress: number; error?: string }[]>([])
+	const [dropping, setDropping] = useState(false)
+
+	const viewCenter = () => toWorld(cameraRef.current, { x: size.w / 2, y: size.h / 2 })
+
+	/** Moves `rect` right, then down, until it doesn't cover anything on the board. */
+	const freeSpot = useCallback((rect: Rect): Point => {
+		const all = elementsRef.current
+		const taken = [...all.values()].map((el) => elementBounds(el, all))
+		const gap = 40
+		const free = (r: Rect) => !taken.some((t) => intersects({ x: r.x - gap / 2, y: r.y - gap / 2, w: r.w + gap, h: r.h + gap }, t))
+		for (let row = 0; row < 12; row++) {
+			for (let col = 0; col < 12; col++) {
+				const candidate = { ...rect, x: rect.x + col * (rect.w / 2 + gap), y: rect.y + row * (rect.h / 2 + gap) }
+				if (free(candidate)) return { x: candidate.x, y: candidate.y }
+			}
+		}
+		return { x: rect.x, y: rect.y }
+	}, [])
+
+	/**
+	 * Adds media blocks in a row centered on `at`. With `exact` they stay there (a drop);
+	 * otherwise the row moves to free space nearby.
+	 */
+	const insertMedia = useCallback(
+		(items: NewMedia[], at: Point, exact = false) => {
+			if (readOnly || !items.length) return []
+			const gap = 40
+			const width = items.reduce((sum, m) => sum + m.w, 0) + gap * (items.length - 1)
+			const height = Math.max(...items.map((m) => m.h))
+			let origin = { x: at.x - width / 2, y: at.y - height / 2 }
+			if (!exact) origin = freeSpot({ ...origin, w: width, h: height })
+			let x = origin.x
+			store.checkpoint()
+			const ids = store.add(
+				items.map((m) => {
+					const el = {
+						type: 'media' as const,
+						kind: m.kind,
+						src: m.src,
+						name: m.name,
+						...(m.assetId ? { assetId: m.assetId } : {}),
+						...(m.start ? { start: m.start } : {}),
+						w: m.w,
+						h: m.h,
+						x: Math.round(x),
+						y: Math.round(origin.y + (height - m.h) / 2),
+					}
+					x += m.w + gap
+					return el
+				}),
+			)
+			store.checkpoint()
+			setTool('select')
+			setSelection(ids)
+			return ids
+		},
+		[readOnly, store, freeSpot],
+	)
+
+	const insertFiles = useCallback(
+		async (files: File[], at: Point, exact = false) => {
+			if (readOnly) return
+			// sizes first, so the files can be laid out in a row before they finish uploading
+			const items = await Promise.all(
+				files.map(async (file) => {
+					const natural = await readMediaSize(file)
+					let size: { w: number; h: number }
+					if (file.type.startsWith('image/')) size = fitSize(natural?.w ?? 0, natural?.h ?? 0, 480)
+					else if (file.type.startsWith('video/')) {
+						const fitted = fitSize(natural?.w || 16, natural?.h || 9, 560)
+						size = { w: fitted.w, h: fitted.h + MEDIA_HEADER }
+					} else size = { w: 420, h: 560 + MEDIA_HEADER }
+					return { file, size, id: `${file.name}-${Math.random()}` }
+				}),
+			)
+			const gap = 40
+			const total = items.reduce((sum, item) => sum + item.size.w, 0) + gap * (items.length - 1)
+			const height = Math.max(...items.map((item) => item.size.h))
+			const origin = exact
+				? { x: at.x - total / 2, y: at.y - height / 2 }
+				: freeSpot({ x: at.x - total / 2, y: at.y - height / 2, w: total, h: height })
+			let x = origin.x
+			const placed = items.map((item) => {
+				const center = { x: x + item.size.w / 2, y: origin.y + height / 2 }
+				x += item.size.w + gap
+				return { ...item, center }
+			})
+			setUploads((list) => [...list, ...placed.map((p) => ({ id: p.id, name: p.file.name, progress: 0 }))])
+			await Promise.all(
+				placed.map(async ({ file, size, id, center }) => {
+					try {
+						const asset = await uploadAsset(boardId, file, (progress) =>
+							setUploads((list) => list.map((u) => (u.id === id ? { ...u, progress } : u))),
+						)
+						insertMedia([{ kind: asset.kind, src: asset.url, assetId: asset.id, name: asset.name, ...size }], center, true)
+						setUploads((list) => list.filter((u) => u.id !== id))
+					} catch (e) {
+						setUploads((list) => list.map((u) => (u.id === id ? { ...u, error: (e as Error).message } : u)))
+					}
+				}),
+			)
+		},
+		[readOnly, boardId, insertMedia, freeSpot],
+	)
+
 	// ---------- camera ----------
 
 	const zoomBy = useCallback(
@@ -319,6 +433,8 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 	function onPointerDown(e: React.PointerEvent) {
 		const container = containerRef.current!
 		const screen = localPoint(e)
+		// a selected player or PDF handles its own clicks
+		if ((e.target as Element).closest('[data-interactive]')) return
 		pointers.current.set(e.pointerId, screen)
 		container.setPointerCapture(e.pointerId)
 
@@ -360,7 +476,7 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					handle: value as Handle,
 					original: selected,
 					startWorld: world,
-					keepRatio: selected.type === 'sticky',
+					keepRatio: keepsRatio(selected),
 				}
 			} else if (type === 'connect' && isBox(selected)) {
 				drag.current = {
@@ -671,10 +787,21 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 		}
 		const onPaste = (e: ClipboardEvent) => {
 			if (isTyping(e.target) || readOnly) return
+			const at = lastWorld.current ?? toWorld(cameraRef.current, { x: size.w / 2, y: size.h / 2 })
+			const files = [...(e.clipboardData?.files ?? [])]
+			if (files.length) {
+				e.preventDefault()
+				void insertFiles(files, at)
+				return
+			}
 			const text = e.clipboardData?.getData('text/plain') ?? ''
 			if (!text) return
 			e.preventDefault()
-			const at = lastWorld.current ?? toWorld(cameraRef.current, { x: size.w / 2, y: size.h / 2 })
+			const media = !/\s/.test(text.trim()) ? parseMediaUrl(text) : null
+			if (media) {
+				insertMedia([media], at)
+				return
+			}
 			store.checkpoint()
 			if (text.startsWith(CLIPBOARD_PREFIX)) {
 				try {
@@ -705,7 +832,7 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 			window.removeEventListener('cut', onCopy)
 			window.removeEventListener('paste', onPaste)
 		}
-	}, [store, readOnly, size, select, duplicate, deleteSelection, startEditing, detachedSelection, fit, zoomBy])
+	}, [store, readOnly, size, select, duplicate, deleteSelection, startEditing, detachedSelection, fit, zoomBy, insertFiles, insertMedia])
 
 	// ---------- render ----------
 
@@ -770,6 +897,24 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 				onPointerCancel={onPointerUp}
 				onPointerLeave={() => sendCursor(null)}
 				onDoubleClick={onDoubleClick}
+				onDragOver={(e) => {
+					if (readOnly || !e.dataTransfer.types.some((t) => t === 'Files' || t === 'text/uri-list')) return
+					e.preventDefault()
+					setDropping(true)
+				}}
+				onDragLeave={(e) => {
+					if (e.currentTarget === e.target) setDropping(false)
+				}}
+				onDrop={(e) => {
+					setDropping(false)
+					if (readOnly) return
+					e.preventDefault()
+					const at = toWorld(cameraRef.current, localPoint(e))
+					const files = [...e.dataTransfer.files]
+					if (files.length) return void insertFiles(files, at, true)
+					const media = parseMediaUrl(e.dataTransfer.getData('text/uri-list').split('\n')[0] ?? '')
+					if (media) insertMedia([media], at, true)
+				}}
 				onContextMenu={(e) => e.preventDefault()}
 			>
 				<div
@@ -787,6 +932,8 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 								onLabel={onLabel}
 								onEditEnd={finishEditing}
 							/>
+						) : el.type === 'media' ? (
+							<MediaView key={el.id} el={el} dark={dark} active={!d && liveSelection.length === 1 && liveSelection[0] === el.id} />
 						) : (
 							<BoxView key={el.id} el={el} dark={dark} editing={editing === el.id} onText={onText} onEditEnd={finishEditing} />
 						),
@@ -902,6 +1049,45 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 				</div>
 			</div>
 
+			{uploads.length > 0 && (
+				<div data-ui className="absolute bottom-16 left-1/2 z-20 w-72 max-w-[calc(100%-32px)] -translate-x-1/2 space-y-1.5">
+					{uploads.map((u) => (
+						<div
+							key={u.id}
+							role="status"
+							className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
+						>
+							<div className="flex items-center justify-between gap-2">
+								<span className="truncate font-medium">{u.name}</span>
+								{u.error ? (
+									<button
+										type="button"
+										className="text-gray-500 hover:text-gray-900 dark:hover:text-white"
+										onClick={() => setUploads((list) => list.filter((x) => x.id !== u.id))}
+									>
+										Dismiss
+									</button>
+								) : (
+									<span className="tabular-nums text-gray-500">{Math.round(u.progress * 100)}%</span>
+								)}
+							</div>
+							{u.error ? (
+								<p className="mt-1 text-red-600 dark:text-red-400">{u.error}</p>
+							) : (
+								<div className="mt-1.5 h-1 overflow-hidden rounded bg-gray-200 dark:bg-gray-700">
+									<div className="h-full bg-brand-600 transition-[width]" style={{ width: `${u.progress * 100}%` }} />
+								</div>
+							)}
+						</div>
+					))}
+				</div>
+			)}
+			{dropping && (
+				<div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-brand-500 bg-brand-500/5 text-sm font-medium text-brand-700 dark:text-brand-300">
+					Drop images, videos or PDFs to add them to the board
+				</div>
+			)}
+
 			{elements.size === 0 && !readOnly && (
 				<div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-gray-500">
 					Pick a tool on the left to add sticky notes, shapes, text and connectors.
@@ -921,6 +1107,13 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					}}
 					onUndo={() => store.undo.undo()}
 					onRedo={() => store.undo.redo()}
+					onFiles={(files) => insertFiles(files, viewCenter())}
+					onLink={(url) => {
+						const media = parseMediaUrl(url)
+						if (!media) return 'Paste a web address starting with http:// or https://'
+						insertMedia([media], viewCenter())
+						return null
+					}}
 				/>
 			)}
 			<ZoomControls

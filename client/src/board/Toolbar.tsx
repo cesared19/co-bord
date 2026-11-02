@@ -1,4 +1,4 @@
-import { Hand, Maximize, Minus, MousePointer2, MoveUpRight, Plus, Redo2, StickyNote, Type, Undo2 } from 'lucide-react'
+import { Hand, ImagePlus, Maximize, Minus, MousePointer2, MoveUpRight, Plus, Redo2, StickyNote, Type, Undo2, Upload } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { shapePath } from './geometry'
 import { SHAPES, type ShapeKind, type Tool } from './types'
@@ -60,9 +60,12 @@ interface ToolbarProps {
 	onShape: (kind: ShapeKind) => void
 	onUndo: () => void
 	onRedo: () => void
+	onFiles: (files: File[]) => void
+	/** Returns an error to show, or null when the link was added. */
+	onLink: (url: string) => string | null
 }
 
-export function Toolbar({ tool, shapeKind, onTool, onShape, onUndo, onRedo }: ToolbarProps) {
+export function Toolbar({ tool, shapeKind, onTool, onShape, onUndo, onRedo, onFiles, onLink }: ToolbarProps) {
 	const [shapesOpen, setShapesOpen] = useState(false)
 	const ref = useRef<HTMLDivElement>(null)
 	useEffect(() => {
@@ -117,6 +120,7 @@ export function Toolbar({ tool, shapeKind, onTool, onShape, onUndo, onRedo }: To
 				<ToolButton label="Connector" shortcut="L" active={tool === 'connector'} onClick={() => onTool('connector')}>
 					<MoveUpRight size={19} />
 				</ToolButton>
+				<MediaMenu onFiles={onFiles} onLink={onLink} />
 			</div>
 			<div className={`${panel} flex flex-col gap-0.5 p-1`}>
 				<ToolButton label="Undo" shortcut="Ctrl+Z" onClick={onUndo}>
@@ -164,6 +168,90 @@ export function ZoomControls({
 				<Maximize size={16} />
 				<span className="sr-only">Fit everything</span>
 			</button>
+		</div>
+	)
+}
+
+function MediaMenu({ onFiles, onLink }: { onFiles: (files: File[]) => void; onLink: (url: string) => string | null }) {
+	const [open, setOpen] = useState(false)
+	const [error, setError] = useState('')
+	const ref = useRef<HTMLDivElement>(null)
+	const fileRef = useRef<HTMLInputElement>(null)
+	useEffect(() => {
+		if (!open) return
+		const close = (e: PointerEvent) => {
+			if (!ref.current?.contains(e.target as Node)) setOpen(false)
+		}
+		window.addEventListener('pointerdown', close)
+		return () => window.removeEventListener('pointerdown', close)
+	}, [open])
+
+	return (
+		<div ref={ref} className="relative">
+			<ToolButton label="Images, videos and PDFs" active={open} onClick={() => setOpen(!open)}>
+				<ImagePlus size={19} />
+			</ToolButton>
+			{open && (
+				<div className={`${panel} absolute top-0 left-12 w-72 space-y-3 p-3`}>
+					<button
+						type="button"
+						onClick={() => fileRef.current?.click()}
+						className="flex w-full items-center gap-2 rounded-lg border border-dashed border-gray-300 px-3 py-3 text-left text-sm hover:border-brand-500 hover:bg-brand-50 dark:border-gray-600 dark:hover:bg-brand-900/20"
+					>
+						<Upload size={18} className="shrink-0 text-brand-600" />
+						<span>
+							<span className="block font-medium">Upload files</span>
+							<span className="block text-xs text-gray-500">Images, videos or PDFs. You can also drop or paste them on the board.</span>
+						</span>
+					</button>
+					<input
+						ref={fileRef}
+						type="file"
+						multiple
+						hidden
+						accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,video/mp4,video/webm,video/ogg,video/quicktime,application/pdf"
+						onChange={(e) => {
+							const files = [...(e.target.files ?? [])]
+							e.target.value = ''
+							if (files.length) {
+								onFiles(files)
+								setOpen(false)
+							}
+						}}
+					/>
+					<form
+						className="space-y-1.5"
+						onSubmit={(e) => {
+							e.preventDefault()
+							const url = String(new FormData(e.currentTarget).get('url') ?? '')
+							const problem = onLink(url)
+							setError(problem ?? '')
+							if (!problem) setOpen(false)
+						}}
+					>
+						<label htmlFor="media-url" className="block text-sm font-medium">
+							Embed a link
+						</label>
+						<div className="flex gap-1.5">
+							<input
+								id="media-url"
+								name="url"
+								placeholder="https://"
+								autoComplete="off"
+								className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-brand-600 focus:outline-none dark:border-gray-600 dark:bg-gray-800"
+							/>
+							<button type="submit" className="rounded-md bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700">
+								Add
+							</button>
+						</div>
+						{error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+						<p className="text-xs text-gray-500">
+							YouTube, Google Drive or Vimeo, or a link to an image, a video or a PDF. Drive files play for people who can open them in
+							Google Drive.
+						</p>
+					</form>
+				</div>
+			)}
 		</div>
 	)
 }
