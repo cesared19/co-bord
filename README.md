@@ -108,4 +108,4 @@ The server tests start PostgreSQL with Testcontainers, so they need Docker.
 
 ## License
 
-Copyright (c) 2026 cesared19. All rights reserved. See [LICENSE](./LICENSE).
+Copyright (c) 2026 César Eduardo Godoy Robles. All rights reserved. See [LICENSE](./LICENSE).
