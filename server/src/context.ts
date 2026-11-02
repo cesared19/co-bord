@@ -1,0 +1,40 @@
+import type { FastifyReply, FastifyRequest } from 'fastify'
+import { SESSION_COOKIE, type User, userForToken } from './auth.js'
+import type { Config } from './config.js'
+import type { Db } from './db.js'
+import { forbidden, unauthorized } from './errors.js'
+
+export interface Ctx {
+	db: Db
+	config: Config
+	/** Set by the collaboration server: closes live connections of a deleted board. */
+	onBoardDeleted?: (boardId: string) => void
+	/** Set by the collaboration server: stores pending changes of a board now. */
+	flushBoard?: (boardId: string) => Promise<void>
+}
+
+export async function currentUser(ctx: Ctx, req: FastifyRequest): Promise<User | null> {
+	return userForToken(ctx.db, req.cookies[SESSION_COOKIE])
+}
+
+export async function requireUser(ctx: Ctx, req: FastifyRequest): Promise<User> {
+	const user = await currentUser(ctx, req)
+	if (!user) throw unauthorized()
+	return user
+}
+
+export async function requireAdmin(ctx: Ctx, req: FastifyRequest): Promise<User> {
+	const user = await requireUser(ctx, req)
+	if (!user.isAdmin) throw forbidden('Only admins can do this')
+	return user
+}
+
+export function setSessionCookie(ctx: Ctx, reply: FastifyReply, token: string, expiresAt: Date) {
+	reply.setCookie(SESSION_COOKIE, token, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax',
+		secure: ctx.config.cookieSecure,
+		expires: expiresAt,
+	})
+}
