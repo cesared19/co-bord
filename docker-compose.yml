@@ -21,7 +21,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SESSION_DAYS: ${SESSION_DAYS:-7}
     ports:
-      - '${APP_PORT:-3100}:8080'
+      - '${APP_PORT:-3200}:8080'
     depends_on:
       db:
         condition: service_healthy

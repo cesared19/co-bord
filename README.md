@@ -64,12 +64,12 @@ Set `DB_PASSWORD` in `.env`, then:
 docker compose up -d --build
 ```
 
-co-bord is served on port 3100 (`APP_PORT`). Open it and create the admin account.
+co-bord is served on port 3200 (`APP_PORT`). Open it and create the admin account.
 
 | Variable | Meaning |
 | --- | --- |
 | `DB_PASSWORD` | Password of the PostgreSQL user (required) |
-| `APP_PORT` | Port on the host, 3100 by default |
+| `APP_PORT` | Port on the host, 3200 by default |
 | `COOKIE_SECURE` | `true` once co-bord is served over HTTPS |
 | `SESSION_DAYS` | How long a sign-in lasts, 7 days by default |
 

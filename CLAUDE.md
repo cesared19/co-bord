@@ -19,7 +19,7 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
   - `Canvas.tsx`: herramientas, arrastres (pan, mover, redimensionar, selección por recuadro, crear, conectar, extremos, pinch), atajos, portapapeles (eventos `copy`/`paste`, funcionan sin HTTPS), presencia (awareness: `user`, `cursor`, `selection`, `editing`). Elementos en HTML/SVG dentro de un contenedor transformado; selección y manijas en coordenadas de pantalla.
   - `useBoardDoc.ts`: el proveedor se crea en un efecto (`useBoardConnection`), no en render.
   - `exportPng.ts`: dibuja el tablero en canvas (no usa foreignObject).
-- **Deploy:** `Dockerfile` (multi-stage, una imagen) + `docker-compose.yml` (Postgres 16 + app en `APP_PORT`, 3100 por defecto). Sin HTTPS todavía; `COOKIE_SECURE=true` cuando lo haya. `crypto.randomUUID` no existe sin HTTPS: usar `newId()` (`src/lib/id.ts`).
+- **Deploy:** `Dockerfile` (multi-stage, una imagen) + `docker-compose.yml` (Postgres 16 + app en `APP_PORT`, 3200 por defecto; en el servidor ya están SparkyTC en 3000 y 8080 y ProDash en 3100). Sin HTTPS todavía; `COOKIE_SECURE=true` cuando lo haya. `crypto.randomUUID` no existe sin HTTPS: usar `newId()` (`src/lib/id.ts`).
 
 ## Decisiones tomadas
 
