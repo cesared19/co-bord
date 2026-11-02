@@ -25,6 +25,9 @@ export function createCollab(ctx: Ctx) {
 		maxDebounce: 10000,
 
 		async onAuthenticate({ documentName, requestHeaders, connectionConfig }) {
+			// browsers send the cookie on cross-site sockets too: only accept our own pages
+			const origin = requestHeaders.get('origin')
+			if (origin && new URL(origin).host !== requestHeaders.get('host')) throw new Error('Wrong origin')
 			const user = await userForToken(db, cookieFromHeader(requestHeaders.get('cookie'), SESSION_COOKIE))
 			if (!user) throw new Error('Not signed in')
 			if (!isUuid(documentName)) throw new Error('Board not found')
@@ -46,10 +49,11 @@ export function createCollab(ctx: Ctx) {
 
 	async function save(boardId: string, document: Y.Doc, userId: number | null) {
 		const state = Buffer.from(Y.encodeStateAsUpdate(document))
-		await db.query(
-			'UPDATE boards SET document = $2, updated_at = now(), updated_by = COALESCE($3, updated_by) WHERE id = $1',
-			[boardId, state, userId],
-		)
+		await db.query('UPDATE boards SET document = $2, updated_at = now(), updated_by = COALESCE($3, updated_by) WHERE id = $1', [
+			boardId,
+			state,
+			userId,
+		])
 	}
 
 	ctx.onBoardDeleted = (boardId) => hocuspocus.closeConnections(boardId)

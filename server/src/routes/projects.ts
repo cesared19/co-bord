@@ -123,10 +123,10 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx) {
 			`SELECT count(*)::int AS n FROM project_members WHERE project_id = $1 AND role = 'owner' AND user_id <> $2`,
 			[projectId, leavingUserId],
 		)
-		const { rows: current } = await db.query<{ role: Role }>(
-			'SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2',
-			[projectId, leavingUserId],
-		)
+		const { rows: current } = await db.query<{ role: Role }>('SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2', [
+			projectId,
+			leavingUserId,
+		])
 		if (current[0]?.role === 'owner' && rows[0].n === 0) throw badRequest('A project needs at least one owner')
 	}
 }

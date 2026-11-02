@@ -15,7 +15,7 @@ import { projectRoutes } from './routes/projects.js'
 import { userRoutes } from './routes/users.js'
 
 export async function buildApp(config: Config, db: Db, opts: { logger?: boolean } = {}) {
-	const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 })
+	const app = Fastify({ logger: opts.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024 })
 	const ctx: Ctx = { db, config }
 
 	await app.register(fastifyCookie)

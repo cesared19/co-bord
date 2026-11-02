@@ -19,8 +19,7 @@ export function str(body: Body, key: string, opts: { min?: number; max?: number;
 	const trimmed = key.toLowerCase().includes('password') ? value : value.trim()
 	if (opts.min !== undefined && trimmed.length < opts.min)
 		throw badRequest(opts.min === 1 ? `${key} is required` : `${key} must have at least ${opts.min} characters`)
-	if (opts.max !== undefined && trimmed.length > opts.max)
-		throw badRequest(`${key} must have at most ${opts.max} characters`)
+	if (opts.max !== undefined && trimmed.length > opts.max) throw badRequest(`${key} must have at most ${opts.max} characters`)
 	return trimmed
 }
 

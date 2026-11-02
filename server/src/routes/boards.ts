@@ -31,7 +31,9 @@ export function boardRoutes(app: FastifyInstance, ctx: Ctx) {
 		const user = await requireUser(ctx, req)
 		const projectId = intParam(req.params.id)
 		await requireProjectRole(db, user, projectId, 'viewer')
-		const { rows } = await db.query(`SELECT ${BOARD_COLUMNS} FROM ${BOARD_FROM} WHERE b.project_id = $1 ORDER BY b.updated_at DESC`, [projectId])
+		const { rows } = await db.query(`SELECT ${BOARD_COLUMNS} FROM ${BOARD_FROM} WHERE b.project_id = $1 ORDER BY b.updated_at DESC`, [
+			projectId,
+		])
 		return { boards: rows.map(toBoard) }
 	})
 

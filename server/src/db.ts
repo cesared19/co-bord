@@ -71,11 +71,7 @@ export async function migrate(db: Db): Promise<void> {
 		await client.query(
 			'CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())',
 		)
-		const applied = new Set(
-			(await client.query<{ version: string }>('SELECT version FROM schema_migrations')).rows.map(
-				(r) => r.version,
-			),
-		)
+		const applied = new Set((await client.query<{ version: string }>('SELECT version FROM schema_migrations')).rows.map((r) => r.version))
 		for (const m of migrations) {
 			if (applied.has(m.version)) continue
 			await client.query('BEGIN')

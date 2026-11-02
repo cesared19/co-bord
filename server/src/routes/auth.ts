@@ -1,5 +1,15 @@
 import type { FastifyInstance } from 'fastify'
-import { createSession, deleteSession, hashPassword, hashToken, pickColor, SESSION_COOKIE, toUser, USER_COLUMNS, verifyPassword } from '../auth.js'
+import {
+	createSession,
+	deleteSession,
+	hashPassword,
+	hashToken,
+	pickColor,
+	SESSION_COOKIE,
+	toUser,
+	USER_COLUMNS,
+	verifyPassword,
+} from '../auth.js'
 import { type Ctx, requireUser, setSessionCookie } from '../context.js'
 import { badRequest, conflict, HttpError } from '../errors.js'
 import { asBody, str } from '../validate.js'
@@ -7,8 +17,7 @@ import { asBody, str } from '../validate.js'
 export const USERNAME_PATTERN = /^[a-zA-Z0-9._-]{3,40}$/
 
 export function checkUsername(username: string) {
-	if (!USERNAME_PATTERN.test(username))
-		throw badRequest('Username must have 3 to 40 letters, numbers, dots, dashes or underscores')
+	if (!USERNAME_PATTERN.test(username)) throw badRequest('Username must have 3 to 40 letters, numbers, dots, dashes or underscores')
 }
 
 export function authRoutes(app: FastifyInstance, ctx: Ctx) {
@@ -80,10 +89,7 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
 	app.put('/api/account', async (req) => {
 		const user = await requireUser(ctx, req)
 		const displayName = str(asBody(req.body), 'displayName', { min: 1, max: 80 })
-		const { rows } = await db.query(
-			`UPDATE users u SET display_name = $2 WHERE id = $1 RETURNING ${USER_COLUMNS}`,
-			[user.id, displayName],
-		)
+		const { rows } = await db.query(`UPDATE users u SET display_name = $2 WHERE id = $1 RETURNING ${USER_COLUMNS}`, [user.id, displayName])
 		return { user: toUser(rows[0]) }
 	})
 

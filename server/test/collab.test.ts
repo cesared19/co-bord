@@ -10,11 +10,11 @@ beforeAll(async () => {
 })
 afterAll(async () => env.stop())
 
-function connect(boardId: string, cookie: string) {
+function connect(boardId: string, cookie: string, origin?: string) {
 	const document = new Y.Doc()
 	class CookieWebSocket extends WebSocket {
 		constructor(url: string, protocols?: string | string[]) {
-			super(url, protocols, { headers: { cookie } })
+			super(url, protocols, { headers: { cookie, ...(origin ? { origin } : {}) } })
 		}
 	}
 	let failure: string | null = null
@@ -52,8 +52,10 @@ describe('collaboration', () => {
 		const a = connect(board.id, editor.cookie)
 		const b = connect(board.id, viewer.cookie)
 		const c = connect(board.id, outsider.cookie)
+		const foreign = connect(board.id, editor.cookie, 'http://evil.example')
 		await until(() => a.provider.isSynced && b.provider.isSynced)
-		await until(() => c.failure() !== null)
+		await until(() => c.failure() !== null && foreign.failure() !== null)
+		foreign.provider.destroy()
 
 		a.document.getMap('elements').set('one', { type: 'shape', x: 10 })
 		await until(() => b.document.getMap('elements').has('one'))
