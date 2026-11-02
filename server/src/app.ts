@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import fastifyCookie from '@fastify/cookie'
+import fastifyMultipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import Fastify from 'fastify'
@@ -9,16 +10,21 @@ import type { Config } from './config.js'
 import type { Ctx } from './context.js'
 import type { Db } from './db.js'
 import { HttpError } from './errors.js'
+import { assetRoutes } from './routes/assets.js'
 import { authRoutes } from './routes/auth.js'
 import { boardRoutes } from './routes/boards.js'
 import { projectRoutes } from './routes/projects.js'
 import { userRoutes } from './routes/users.js'
+import { FileStorage } from './storage.js'
 
 export async function buildApp(config: Config, db: Db, opts: { logger?: boolean } = {}) {
 	const app = Fastify({ logger: opts.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024 })
-	const ctx: Ctx = { db, config }
+	const storage = new FileStorage(config.dataDir)
+	await storage.init()
+	const ctx: Ctx = { db, config, storage }
 
 	await app.register(fastifyCookie)
+	await app.register(fastifyMultipart)
 	await app.register(fastifyWebsocket, { options: { maxPayload: 16 * 1024 * 1024 } })
 
 	app.setErrorHandler((error, req, reply) => {
@@ -33,6 +39,7 @@ export async function buildApp(config: Config, db: Db, opts: { logger?: boolean 
 	userRoutes(app, ctx)
 	projectRoutes(app, ctx)
 	boardRoutes(app, ctx)
+	assetRoutes(app, ctx)
 
 	const collab = createCollab(ctx)
 	app.get('/collab', { websocket: true }, (socket, req) => collab.handle(socket, req.raw))

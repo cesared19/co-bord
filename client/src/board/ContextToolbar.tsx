@@ -1,4 +1,5 @@
 import {
+	ExternalLink,
 	AlignCenter,
 	AlignLeft,
 	AlignRight,
@@ -13,6 +14,7 @@ import {
 	Trash2,
 } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { openUrl } from './media'
 import type { BoardStore } from './store'
 import { ShapeIcon } from './Toolbar'
 import {
@@ -20,7 +22,7 @@ import {
 	type BoardElement,
 	type ConnectorElement,
 	FONT_SIZES,
-	isBox,
+	hasText,
 	PALETTE,
 	type Route,
 	SHAPES,
@@ -57,7 +59,7 @@ export function ContextToolbar({ store, selected, anchor, viewport, onDelete, on
 		setPos({ left, top })
 	}, [anchor.left, anchor.top, anchor.width, anchor.height, viewport.w, viewport.h, selected])
 
-	const boxes = selected.filter(isBox)
+	const boxes = selected.filter(hasText)
 	const shapes = boxes.filter((el) => el.type === 'shape')
 	const stickies = boxes.filter((el) => el.type === 'sticky')
 	const connectors = selected.filter((el): el is ConnectorElement => el.type === 'connector')
@@ -294,6 +296,15 @@ export function ContextToolbar({ store, selected, anchor, viewport, onDelete, on
 							<PenLine size={16} />
 						</button>
 					)}
+					<Divider />
+				</>
+			)}
+			{selected.length === 1 && selected[0].type === 'media' && openUrl(selected[0]) && (
+				<>
+					<a href={openUrl(selected[0])!} target="_blank" rel="noopener noreferrer" title="Open in a new tab" className={btn}>
+						<ExternalLink size={16} />
+						<span className="sr-only">Open in a new tab</span>
+					</a>
 					<Divider />
 				</>
 			)}

@@ -69,7 +69,9 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx) {
 		const user = await requireAdmin(ctx, req)
 		const id = intParam(req.params.id)
 		await requireProjectRole(db, user, id, 'owner')
+		const { rows } = await db.query<{ id: string }>('DELETE FROM assets WHERE project_id = $1 RETURNING id', [id])
 		await db.query('DELETE FROM projects WHERE id = $1', [id])
+		await ctx.storage.remove(rows.map((r) => r.id))
 		return { ok: true }
 	})
 

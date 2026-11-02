@@ -1,4 +1,4 @@
-import type { BoardElement, BoxElement, Camera, ConnectorElement, Endpoint, Point, Rect, ShapeKind } from './types'
+import type { BoardElement, BoxElement, Camera, ConnectorElement, Endpoint, Point, Rect, ShapeKind, TextBox } from './types'
 import { isBox } from './types'
 
 export function shapePath(kind: ShapeKind, w: number, h: number): string {
@@ -40,7 +40,7 @@ export function shapePath(kind: ShapeKind, w: number, h: number): string {
 }
 
 /** Padding around the text inside a shape, so it stays within the outline. */
-export function textInsets(el: BoxElement): { top: number; right: number; bottom: number; left: number } {
+export function textInsets(el: TextBox): { top: number; right: number; bottom: number; left: number } {
 	const base = el.type === 'text' ? 4 : 10
 	if (el.type !== 'shape') return { top: base, right: base, bottom: base, left: base }
 	const { w, h } = el
@@ -289,7 +289,7 @@ export function contrastText(hex: string): string {
 	return luminance > 0.35 ? '#1f2937' : '#f9fafb'
 }
 
-export function resolveTextColor(el: BoxElement, dark: boolean): string {
+export function resolveTextColor(el: TextBox, dark: boolean): string {
 	if (el.textColor !== 'auto') return el.textColor
 	const fill = el.type === 'text' ? 'transparent' : el.fill
 	if (fill === 'transparent') return dark ? '#e5e7eb' : '#1f2937'

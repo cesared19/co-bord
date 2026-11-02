@@ -1,7 +1,8 @@
 {
   "name": "co-bord-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +14,7 @@
   "dependencies": {
     "@hocuspocus/provider": "^4.8.0",
     "lucide-react": "^1.66.0",
+    "pdfjs-dist": "5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router": "^7.18.5",

@@ -73,13 +73,33 @@ export interface ConnectorElement {
 	label: string
 }
 
-export type BoxElement = ShapeElement | StickyElement | TextElement
+export type MediaKind = 'image' | 'video' | 'pdf' | 'youtube' | 'drive' | 'vimeo' | 'link'
+
+/**
+ * Embedded content shown as a resizable block. Uploads keep `assetId` (served at /api/assets/:id);
+ * YouTube, Drive and Vimeo keep the video id in `src`; the other kinds keep a URL.
+ */
+export interface MediaElement extends Box {
+	type: 'media'
+	kind: MediaKind
+	src: string
+	assetId?: string
+	name: string
+	/** YouTube start time, in seconds. */
+	start?: number
+}
+
+/** Elements with text: shapes, sticky notes and text. */
+export type TextBox = ShapeElement | StickyElement | TextElement
+/** Every element with a position and a size. */
+export type BoxElement = TextBox | MediaElement
 export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
-export type NewBox = DistributiveOmit<BoxElement, 'id' | 'z' | 'x' | 'y'>
+export type NewBox = DistributiveOmit<TextBox, 'id' | 'z' | 'x' | 'y'>
 export type BoardElement = BoxElement | ConnectorElement
 
 export const isBox = (el: BoardElement | undefined): el is BoxElement => !!el && el.type !== 'connector'
-export const hasText = (el: BoardElement | undefined): el is BoxElement => isBox(el)
+export const hasText = (el: BoardElement | undefined): el is TextBox =>
+	!!el && (el.type === 'shape' || el.type === 'sticky' || el.type === 'text')
 
 export interface Point {
 	x: number

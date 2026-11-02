@@ -14,12 +14,14 @@ COPY server/ ./
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-alpine
-ENV NODE_ENV=production PORT=8080 CLIENT_DIR=/app/client
+ENV NODE_ENV=production PORT=8080 CLIENT_DIR=/app/client DATA_DIR=/data
 WORKDIR /app/server
 COPY --from=server /app/server/package.json ./
 COPY --from=server /app/server/node_modules ./node_modules
 COPY --from=server /app/server/dist ./dist
 COPY --from=client /app/client/dist /app/client
+# uploaded files live in a volume mounted here
+RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 8080
 CMD ["node", "dist/index.js"]
