@@ -1,5 +1,7 @@
 import {
+	Download,
 	ExternalLink,
+	Frame,
 	AlignCenter,
 	AlignLeft,
 	AlignRight,
@@ -23,6 +25,8 @@ import {
 	type ConnectorElement,
 	FONT_SIZES,
 	hasText,
+	isFrame,
+	FRAME_COLORS,
 	PALETTE,
 	type Route,
 	SHAPES,
@@ -37,13 +41,25 @@ interface Props {
 	onDelete: () => void
 	onDuplicate: () => void
 	onEditText: () => void
+	onWrapInFrame: () => void
+	onExportFrame: (id: string) => void
 }
 
 const btn =
 	'flex h-8 min-w-8 items-center justify-center rounded-md px-1.5 text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
 const on = 'bg-gray-100 dark:bg-gray-800'
 
-export function ContextToolbar({ store, selected, anchor, viewport, onDelete, onDuplicate, onEditText }: Props) {
+export function ContextToolbar({
+	store,
+	selected,
+	anchor,
+	viewport,
+	onDelete,
+	onDuplicate,
+	onEditText,
+	onWrapInFrame,
+	onExportFrame,
+}: Props) {
 	const ref = useRef<HTMLDivElement>(null)
 	const [pos, setPos] = useState({ left: 0, top: 0 })
 
@@ -63,6 +79,7 @@ export function ContextToolbar({ store, selected, anchor, viewport, onDelete, on
 	const shapes = boxes.filter((el) => el.type === 'shape')
 	const stickies = boxes.filter((el) => el.type === 'sticky')
 	const connectors = selected.filter((el): el is ConnectorElement => el.type === 'connector')
+	const frames = selected.filter(isFrame)
 	const first = <T,>(list: T[]) => list[0]
 
 	const patch = (targets: BoardElement[], value: Record<string, unknown>) => {
@@ -299,6 +316,31 @@ export function ContextToolbar({ store, selected, anchor, viewport, onDelete, on
 					<Divider />
 				</>
 			)}
+			{frames.length > 0 && (
+				<>
+					<ColorPopover label="Frame color" value={frames[0].fill} allowAuto frameColors onPick={(fill) => patch(frames, { fill })} />
+					{selected.length === 1 && (
+						<>
+							<button type="button" title="Rename (Enter)" className={btn} onClick={onEditText}>
+								<PenLine size={16} />
+							</button>
+							<button type="button" title="Download the frame as PNG" className={btn} onClick={() => onExportFrame(frames[0].id)}>
+								<Download size={16} />
+							</button>
+						</>
+					)}
+					<Divider />
+				</>
+			)}
+			{selected.length > 1 && frames.length === 0 && (
+				<>
+					<button type="button" title="Put in a frame" aria-label="Put in a frame" className={btn} onClick={onWrapInFrame}>
+						<Frame size={16} />
+						<span className="ml-1 text-xs">Frame</span>
+					</button>
+					<Divider />
+				</>
+			)}
 			{selected.length === 1 && selected[0].type === 'media' && openUrl(selected[0]) && (
 				<>
 					<a href={openUrl(selected[0])!} target="_blank" rel="noopener noreferrer" title="Open in a new tab" className={btn}>
@@ -396,6 +438,7 @@ function ColorPopover({
 	allowAuto,
 	border,
 	text,
+	frameColors,
 }: {
 	label: string
 	value: string
@@ -404,8 +447,11 @@ function ColorPopover({
 	allowAuto?: boolean
 	border?: boolean
 	text?: boolean
+	/** Offer the light frame tints instead of the full palette. */
+	frameColors?: boolean
 }) {
 	const extra = [...(allowAuto ? ['auto'] : []), ...(allowTransparent ? ['transparent'] : [])]
+	const colors = frameColors ? FRAME_COLORS : [...extra, ...PALETTE]
 	return (
 		<Popover
 			label={label}
@@ -426,7 +472,7 @@ function ColorPopover({
 		>
 			{(close) => (
 				<div className="grid grid-cols-6 gap-1">
-					{[...extra, ...PALETTE].map((c) => (
+					{colors.map((c) => (
 						<button
 							key={c}
 							type="button"

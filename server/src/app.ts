@@ -45,7 +45,8 @@ export async function buildApp(config: Config, db: Db, opts: { logger?: boolean 
 	app.get('/collab', { websocket: true }, (socket, req) => collab.handle(socket, req.raw))
 	app.addHook('onClose', async () => collab.close())
 
-	app.get('/api/health', async () => ({ ok: true }))
+	// `now` lets clients line up their clock with the server's for the shared timer
+	app.get('/api/health', async () => ({ ok: true, now: Date.now() }))
 
 	// The built client, with every non-API path falling back to index.html.
 	const clientDir = config.clientDir ? resolve(config.clientDir) : null

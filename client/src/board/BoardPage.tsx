@@ -172,6 +172,8 @@ function BoardSession({
 						boardId={board.id}
 						dark={dark}
 						jumpTo={jumpTo}
+						user={user}
+						boardName={board.name}
 					/>
 				)}
 			</div>

@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.2.0)
+## Features (0.3.0)
 
 ### Boards
 
@@ -24,6 +24,20 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  Google Drive files play for people who can open them in Google Drive. Uploaded files are visible only to the project's members.
 -  Light, dark or system theme.
 
+### Frames and templates
+
+-  **Frames** (F, or drag with the Frame tool) are titled areas: moving a frame by its title moves everything inside it, nested frames included. Select several elements and click **Frame** to put them in one. Frames have light tints, can be renamed (Enter), and each one downloads as its own PNG. **Frames** next to the zoom controls lists them and jumps to one.
+-  **Templates** add a ready-made layout next to what is on the board:
+   -  Retrospectives: **Start, Stop, Continue**, **Mad, Sad, Glad** and **4Ls**, each with a column per topic and an action items area.
+   -  **Workflow**: a connected flowchart with a start, steps, a decision and an end.
+   -  **Design document**: context, goals, non-goals, proposal with a diagram area, alternatives, risks and a decision log, plus a column for review comments.
+
+### Timer and voting
+
+-  **Timer** shared by everyone on the board, from the timer button: 1, 3, 5 or 10 minutes or any length, with pause, +1 minute and stop. It chimes at zero.
+-  **Voting**: choose the votes per person and start; everyone clicks items to vote (several times on one if they want) and clicks their badge to take a vote back. Each person only sees their own votes until the voting ends; then the totals show on the items, with a ranking that jumps to each one.
+-  Viewers see the timer and the results; editors run them.
+
 ### Real time
 
 -  Everyone on a board sees the others' changes as they happen, their cursors with their names, what each one has selected and who is typing where.
@@ -39,8 +53,8 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 | Keys | Action |
 | --- | --- |
-| V, H, N, T, S / R, L | Select, Hand, Sticky note, Text, Shape / Rectangle, Connector |
-| Enter | Edit the text or label of the selected element |
+| V, H, N, T, S / R, L, F | Select, Hand, Sticky note, Text, Shape / Rectangle, Connector, Frame |
+| Enter | Edit the text, label or frame title of the selected element |
 | Esc | Finish editing, clear the selection |
 | Delete, Backspace | Delete |
 | Ctrl A, Ctrl D | Select all, duplicate |
@@ -54,7 +68,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 1. ~~Boards with shapes, sticky notes, text and connectors~~ (0.1.0)
 2. ~~Live cursors, selections and changes~~ (0.1.0)
 3. ~~Embedded images, videos (YouTube, Google Drive, Vimeo, uploaded) and PDFs as resizable blocks that play and page inside the board~~ (0.2.0)
-4. Templates: retrospectives (columns, votes, timer), workflows and design documents
+4. ~~Templates: retrospectives (columns, votes, timer), workflows and design documents; frames~~ (0.3.0)
 5. Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage; Confluence pages embedded as blocks, and boards published to Confluence
 6. Automations: card rules (for example, create a Jira issue when a note moves to a column), generate SparkyTC test cases from a flow, guided retrospectives and notifications
 
