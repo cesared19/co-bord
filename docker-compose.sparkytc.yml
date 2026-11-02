@@ -1,0 +1,13 @@
+# Joins co-bord to SparkyTC's Docker network, so co-bord's server reaches the SparkyTC backend at
+# http://backend-service:8080 (SparkyTC only publishes it on 127.0.0.1 of the host).
+# Use it with: COMPOSE_FILE=docker-compose.yml:docker-compose.sparkytc.yml in .env
+services:
+  app:
+    networks:
+      - default
+      - sparkytc
+
+networks:
+  sparkytc:
+    external: true
+    name: ${SPARKYTC_NETWORK:-sparkytc_app-network}

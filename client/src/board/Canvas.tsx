@@ -4,6 +4,9 @@ import { BoxView, ConnectorView, FrameView } from './ElementView'
 import { FacilitationMenu, TimerPill, VoteBadges, VoteRanking, VotingBanner } from './Facilitation'
 import { useServerClock, useSession } from './session'
 import { TemplatePicker } from './TemplatePicker'
+import { boardLinks, type SparkyInfo, useLinkResults } from './sparky'
+import { CoveragePanel, LinkBadges, LinkEditor, LinksPopover } from './SparkyLinks'
+import { FlaskConical } from 'lucide-react'
 import type { Template } from './templates'
 import { download, renderPng } from './exportPng'
 import { ContextToolbar } from './ContextToolbar'
@@ -77,6 +80,9 @@ interface Props {
 	jumpTo: Peer | null
 	user: { id: number; displayName: string }
 	boardName: string
+	projectId: number
+	/** The project's SparkyTC connection, once loaded. */
+	sparky: SparkyInfo | null
 }
 
 const viewKey = (boardId: string) => `co-bord:view:${boardId}`
@@ -95,7 +101,7 @@ const isTyping = (target: EventTarget | null) =>
 	target instanceof HTMLElement &&
 	(target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || !!target.closest('dialog'))
 
-export function Canvas({ store, elements, peers, provider, readOnly, boardId, dark, jumpTo, user, boardName }: Props) {
+export function Canvas({ store, elements, peers, provider, readOnly, boardId, dark, jumpTo, user, boardName, projectId, sparky }: Props) {
 	const containerRef = useRef<HTMLDivElement>(null)
 	const [size, setSize] = useState({ w: 0, h: 0 })
 	const savedCamera = useRef(loadCamera(boardId))
@@ -188,6 +194,13 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 	const voting = session.voting?.active ?? false
 	const [showRanking, setShowRanking] = useState(false)
 	const [showTemplates, setShowTemplates] = useState(false)
+
+	// SparkyTC: results of everything linked on the board, in the current build
+	const sparkyReady = !!sparky?.connected && !sparky.error
+	const allLinks = useMemo(() => boardLinks(elements.values()), [elements])
+	const linkResults = useLinkResults(projectId, allLinks, sparkyReady)
+	const [openLinks, setOpenLinks] = useState<string | null>(null)
+	const [showCoverage, setShowCoverage] = useState(false)
 
 	const localPoint = (e: { clientX: number; clientY: number }): Point => {
 		const rect = containerRef.current!.getBoundingClientRect()
@@ -1171,6 +1184,20 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 						<div className="absolute border-2 border-dashed border-brand-500" style={screenRect(rectFromPoints(d.startWorld, d.current))} />
 					)}
 					<VoteBadges session={session.session} state={session} elements={elements} camera={camera} userId={user.id} />
+					{sparkyReady && (
+						<LinkBadges elements={elements} results={linkResults.results} camera={camera} open={openLinks} onOpen={setOpenLinks} />
+					)}
+					{sparkyReady && openLinks && elements.get(openLinks) && (
+						<LinksPopover
+							el={elements.get(openLinks)!}
+							results={linkResults.results}
+							info={sparky!}
+							camera={camera}
+							elements={elements}
+							buildNumber={linkResults.build?.buildNumber}
+							onClose={() => setOpenLinks(null)}
+						/>
+					)}
 					<RemoteCursors peers={peers} camera={camera} />
 				</div>
 			</div>
@@ -1230,6 +1257,29 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 						/>
 					)}
 				</div>
+			)}
+			{sparkyReady && !showCoverage && (
+				<button
+					type="button"
+					data-ui
+					onClick={() => setShowCoverage(true)}
+					className="absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+				>
+					<FlaskConical size={16} /> Coverage
+				</button>
+			)}
+			{sparkyReady && showCoverage && (
+				<CoveragePanel
+					projectId={projectId}
+					info={sparky!}
+					elements={elements}
+					boardName={boardName}
+					onClose={() => setShowCoverage(false)}
+					onShow={(id) => {
+						setSelection([id])
+						fit([id])
+					}}
+				/>
 			)}
 			{showTemplates && (
 				<TemplatePicker
@@ -1296,6 +1346,21 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					onEditText={() => single && startEditing(single.id)}
 					onWrapInFrame={wrapInFrame}
 					onExportFrame={exportFrame}
+					linkEditor={
+						sparkyReady
+							? (el) => (
+									<LinkEditor
+										projectId={projectId}
+										links={'links' in el ? (el.links ?? []) : []}
+										onChange={(links) => {
+											store.checkpoint()
+											store.update([[el.id, { links }]])
+											store.checkpoint()
+										}}
+									/>
+								)
+							: undefined
+					}
 				/>
 			)}
 		</div>
