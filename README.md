@@ -105,3 +105,7 @@ cd client && npx tsc -b && npm run lint && npm run build
 ```
 
 The server tests start PostgreSQL with Testcontainers, so they need Docker.
+
+## License
+
+Copyright (c) 2026 cesared19. All rights reserved. See [LICENSE](./LICENSE).

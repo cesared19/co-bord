@@ -24,6 +24,7 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
 ## Decisiones tomadas
 
 - App separada de SparkyTC, en su propio repositorio.
+- Licencia: propietaria, todos los derechos reservados (`LICENSE`, `"license": "UNLICENSED"` en los package.json). Revisar que las dependencias nuevas sigan siendo de licencia permisiva (MIT, Apache 2.0, BSD, ISC).
 - Cuentas propias (admin inicial desde `/setup`; los admins crean usuarios y proyectos). Roles por proyecto: owner, editor, viewer; los admins actúan como owner en todo. Proyectos ajenos responden 404.
 - Vínculo con SparkyTC: **solo con un token por proyecto** (fase 5). No compartir sesiones ni usuarios con SparkyTC.
 - Confluence: **embeber páginas** como bloques y **publicar** tableros o el reporte de cobertura (no se toman requisitos desde Confluence).
