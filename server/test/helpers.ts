@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
+import type { RetroWriter } from '../src/ai.js'
 import { buildApp } from '../src/app.js'
 import { createDb, type Db, migrate } from '../src/db.js'
 
@@ -15,7 +16,7 @@ export interface TestEnv {
 
 let container: StartedPostgreSqlContainer | null = null
 
-export async function startEnv(): Promise<TestEnv> {
+export async function startEnv(opts: { retroWriter?: RetroWriter } = {}): Promise<TestEnv> {
 	container ??= await new PostgreSqlContainer('postgres:16-alpine').start()
 	const db = createDb(container.getConnectionUri())
 	await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public')
@@ -29,8 +30,10 @@ export async function startEnv(): Promise<TestEnv> {
 			clientDir: null,
 			dataDir: mkdtempSync(join(tmpdir(), 'cobord-')),
 			maxUploadBytes: 1024 * 1024,
+			notifyDelayMs: 100,
 		},
 		db,
+		opts,
 	)
 	const url = await app.listen({ port: 0, host: '127.0.0.1' })
 	return {

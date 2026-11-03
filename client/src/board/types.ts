@@ -28,6 +28,8 @@ interface Box {
 	h: number
 	/** What this element is tested by, in SparkyTC. */
 	links?: SparkyLink[]
+	/** Marks elements co-bord adds and may replace, like the headings of grouped retro notes. */
+	tag?: string
 }
 
 export interface TextStyle {

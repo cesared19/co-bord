@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.5.0)
+## Features (0.6.0)
 
 ### Boards
 
@@ -53,6 +53,18 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Publish** (top right of the board, or the button of a selected frame) creates a Confluence page from the whole board or one frame: its picture attached to the page, a link back to the board and, when the project is connected to SparkyTC, the test coverage report with a status per step. Publishing again updates the same page (a new version) unless you choose a new one.
 -  The account needs permission to view and add pages and attachments in the space. Pages are published in its name, saying who published them.
 
+### Notifications
+
+-  The **bell** in the header lists what concerns you, checked every 30 seconds: **mentions** (`@username` in a sticky note, shape, text, label or frame title; typing `@` suggests the project's members) and changes to what you **follow**: a whole board (**Follow** in the board's header) or one item (the bell in the toolbar above a selection). Changes to the same thing are grouped while unread.
+-  Clicking a notification opens the board on that item. **Mark all read** and **Clear read** keep the list short, and **Account** chooses which notifications you get.
+
+### Guided retrospectives
+
+-  **Group notes and summarize** (timer button, or **Summary** in the voting results) opens the retrospective panel for a retro made from a template (a frame with a frame per column).
+-  **Group similar notes** puts the notes that share key words together in each column, under a heading, most voted first; columns grow and what's below them moves down. Undo reverts it in one step.
+-  The **summary** comes from the board: notes and votes per column, the groups and the most voted notes, and the action items. With `ANTHROPIC_API_KEY` set, **Write with Claude** also drafts a summary with themes and suggested actions (the notes and votes are sent to Anthropic's API).
+-  Copy the summary as text, **add it to the board** in its own frame, or **publish** it to Confluence with the retro's picture.
+
 ### Real time
 
 -  Everyone on a board sees the others' changes as they happen, their cursors with their names, what each one has selected and who is typing where.
@@ -85,7 +97,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 3. ~~Embedded images, videos (YouTube, Google Drive, Vimeo, uploaded) and PDFs as resizable blocks that play and page inside the board~~ (0.2.0)
 4. ~~Templates: retrospectives (columns, votes, timer), workflows and design documents; frames~~ (0.3.0)
 5. ~~Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage~~ (0.4.0); ~~Confluence pages embedded as blocks, and boards published to Confluence~~ (0.5.0)
-6. Automations: card rules (for example, create a Jira issue when a note moves to a column), generate SparkyTC test cases from a flow, guided retrospectives and notifications
+6. Automations: ~~guided retrospectives and notifications~~ (0.6.0); card rules (for example, create a Jira issue when a note moves to a column) and generating SparkyTC test cases from a flow
 
 ## Running it
 
@@ -110,6 +122,7 @@ co-bord is served on port 3200 (`APP_PORT`). Open it and create the admin accoun
 | `COOKIE_SECURE` | `true` once co-bord is served over HTTPS |
 | `SESSION_DAYS` | How long a sign-in lasts, 7 days by default |
 | `MAX_UPLOAD_MB` | Largest file that can be uploaded, 500 MB by default |
+| `ANTHROPIC_API_KEY` | Optional: lets Claude (Claude Opus 5.5) write retrospective summaries |
 | `ENCRYPTION_KEY` | Encrypts the credentials of integrations. When empty, a key is created in the `app-data` volume; keep a copy of it, or set your own |
 
 Uploaded files are kept in the `app-data` volume and the database in `db-data`; back up both.

@@ -19,8 +19,11 @@ import { FileStorage } from './storage.js'
 import { SecretBox } from './crypto.js'
 import { sparkyRoutes } from './routes/sparkytc.js'
 import { confluenceRoutes } from './routes/confluence.js'
+import { notificationRoutes } from './routes/notifications.js'
+import { retroRoutes } from './routes/retro.js'
+import { RetroWriter } from './ai.js'
 
-export async function buildApp(config: Config, db: Db, opts: { logger?: boolean } = {}) {
+export async function buildApp(config: Config, db: Db, opts: { logger?: boolean; retroWriter?: RetroWriter } = {}) {
 	const app = Fastify({ logger: opts.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024 })
 	const storage = new FileStorage(config.dataDir)
 	await storage.init()
@@ -46,6 +49,8 @@ export async function buildApp(config: Config, db: Db, opts: { logger?: boolean 
 	assetRoutes(app, ctx)
 	sparkyRoutes(app, ctx)
 	confluenceRoutes(app, ctx)
+	notificationRoutes(app, ctx)
+	retroRoutes(app, ctx, opts.retroWriter ?? new RetroWriter(config.anthropicApiKey))
 
 	const collab = createCollab(ctx)
 	app.get('/collab', { websocket: true }, (socket, req) => collab.handle(socket, req.raw))

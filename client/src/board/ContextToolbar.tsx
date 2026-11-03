@@ -1,4 +1,6 @@
 import {
+	Bell,
+	BellRing,
 	BookOpenText,
 	FlaskConical,
 	Download,
@@ -45,6 +47,10 @@ interface Props {
 	onEditText: () => void
 	onWrapInFrame: () => void
 	onExportFrame: (id: string) => void
+	/** The user follows the selected element. */
+	following?: boolean
+	/** Follows or stops following the selected element, when one is selected. */
+	onToggleFollow?: () => void
 	/** Opens the publish dialog for a frame, when the project is connected to Confluence. */
 	onPublishFrame?: (frameId: string) => void
 	/** The SparkyTC link picker for one element, when the project is connected. */
@@ -67,6 +73,8 @@ export function ContextToolbar({
 	onExportFrame,
 	linkEditor,
 	onPublishFrame,
+	following,
+	onToggleFollow,
 }: Props) {
 	const ref = useRef<HTMLDivElement>(null)
 	const [pos, setPos] = useState({ left: 0, top: 0 })
@@ -379,6 +387,18 @@ export function ContextToolbar({
 					</Popover>
 					<Divider />
 				</>
+			)}
+			{onToggleFollow && (
+				<button
+					type="button"
+					title={following ? 'Following: you are notified when it changes. Click to stop.' : 'Follow: be notified when it changes'}
+					aria-pressed={following}
+					className={`${btn} ${following ? on : ''}`}
+					onClick={onToggleFollow}
+				>
+					{following ? <BellRing size={16} className="text-brand-600" /> : <Bell size={16} />}
+					<span className="sr-only">{following ? 'Stop following' : 'Follow'}</span>
+				</button>
 			)}
 			<button type="button" title="Bring to front" className={btn} onClick={() => (store.checkpoint(), store.bringToFront(ids))}>
 				<BringToFront size={16} />

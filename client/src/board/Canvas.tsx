@@ -9,6 +9,9 @@ import { CoveragePanel, LinkBadges, LinkEditor, LinksPopover } from './SparkyLin
 import { BookOpenText, FlaskConical } from 'lucide-react'
 import { type ConfluenceInfo, confluencePageId, searchConfluence } from './confluence'
 import { PublishDialog } from './PublishDialog'
+import { RetroPanel } from './RetroPanel'
+import type { SummarySection } from './retro'
+import type { Follows } from './follows'
 import { api } from '../lib/api'
 import type { Template } from './templates'
 import { download, renderPng } from './exportPng'
@@ -88,6 +91,9 @@ interface Props {
 	sparky: SparkyInfo | null
 	/** The project's Confluence connection, once loaded. */
 	confluence: ConfluenceInfo | null
+	follows: Follows
+	/** An element to show when the board opens (from a notification). */
+	focusId: string | null
 }
 
 const viewKey = (boardId: string) => `co-bord:view:${boardId}`
@@ -120,6 +126,8 @@ export function Canvas({
 	projectId,
 	sparky,
 	confluence,
+	follows,
+	focusId,
 }: Props) {
 	const containerRef = useRef<HTMLDivElement>(null)
 	const [size, setSize] = useState({ w: 0, h: 0 })
@@ -219,7 +227,12 @@ export function Canvas({
 	const allLinks = useMemo(() => boardLinks(elements.values()), [elements])
 	const linkResults = useLinkResults(projectId, allLinks, sparkyReady)
 	const [openLinks, setOpenLinks] = useState<string | null>(null)
-	const [showCoverage, setShowCoverage] = useState(false)
+	const [panel, setPanel] = useState<'coverage' | 'retro' | null>(null)
+	const showCoverage = panel === 'coverage'
+	const setShowCoverage = (on: boolean) => setPanel(on ? 'coverage' : null)
+	const openPanel = (which: 'coverage' | 'retro') => setPanel(which)
+	/** The retrospective summary to publish with the page, when publishing from the retro panel. */
+	const [publishSummary, setPublishSummary] = useState<SummarySection[] | null>(null)
 	const confluenceReady = !!confluence?.connected && !confluence.error
 	/** The publish dialog, for the whole board ('') or a frame. */
 	const [publishing, setPublishing] = useState<string | null>(null)
@@ -550,6 +563,14 @@ export function Canvas({
 		},
 		[size],
 	)
+
+	const focused = useRef<string | null>(null)
+	useEffect(() => {
+		if (!focusId || focused.current === focusId || !size.w || !elements.has(focusId)) return
+		focused.current = focusId
+		setSelection([focusId])
+		fit([focusId])
+	}, [focusId, elements, size.w, fit])
 
 	useEffect(() => {
 		const el = containerRef.current
@@ -1302,7 +1323,13 @@ export function Canvas({
 			{(session.timer || session.voting || showRanking) && (
 				<div data-ui className="absolute top-3 left-1/2 z-20 flex max-w-[calc(100%-120px)] -translate-x-1/2 flex-col items-center gap-2">
 					<TimerPill session={session.session} state={session} canControl={!readOnly} />
-					<VotingBanner session={session.session} state={session} canControl={!readOnly} onResults={() => setShowRanking(!showRanking)} />
+					<VotingBanner
+						session={session.session}
+						state={session}
+						canControl={!readOnly}
+						onResults={() => setShowRanking(!showRanking)}
+						onSummary={() => openPanel('retro')}
+					/>
 					{showRanking && session.voting && !session.voting.active && (
 						<VoteRanking
 							state={session}
@@ -1316,7 +1343,7 @@ export function Canvas({
 					)}
 				</div>
 			)}
-			{!showCoverage && (sparkyReady || (confluenceReady && !readOnly)) && (
+			{!panel && (sparkyReady || (confluenceReady && !readOnly)) && (
 				<div data-ui className="absolute top-3 right-3 z-10 flex gap-2">
 					{confluenceReady && !readOnly && (
 						<button
@@ -1338,6 +1365,26 @@ export function Canvas({
 					)}
 				</div>
 			)}
+			{panel === 'retro' && (
+				<RetroPanel
+					store={store}
+					elements={elements}
+					boardId={boardId}
+					votes={session.counts}
+					voters={session.voters}
+					readOnly={readOnly}
+					canPublish={confluenceReady && !readOnly}
+					onPublish={(scopeId, sections) => {
+						setPublishSummary(sections)
+						setPublishing(scopeId)
+					}}
+					onShow={(id) => {
+						setSelection([id])
+						fit([id])
+					}}
+					onClose={() => setPanel(null)}
+				/>
+			)}
 			{publishing !== null && confluence && (
 				<PublishDialog
 					boardId={boardId}
@@ -1347,7 +1394,11 @@ export function Canvas({
 					confluence={confluence}
 					withCoverage={sparkyReady}
 					initialFrameId={publishing || null}
-					onClose={() => setPublishing(null)}
+					summary={publishSummary}
+					onClose={() => {
+						setPublishing(null)
+						setPublishSummary(null)
+					}}
 				/>
 			)}
 			{sparkyReady && showCoverage && (
@@ -1413,7 +1464,9 @@ export function Canvas({
 								}
 							: undefined
 					}
-					facilitation={<FacilitationMenu session={session.session} state={session} userName={user.displayName} />}
+					facilitation={
+						<FacilitationMenu session={session.session} state={session} userName={user.displayName} onRetro={() => openPanel('retro')} />
+					}
 				/>
 			)}
 			<ZoomControls
@@ -1442,6 +1495,8 @@ export function Canvas({
 					onWrapInFrame={wrapInFrame}
 					onExportFrame={exportFrame}
 					onPublishFrame={confluenceReady ? (id) => setPublishing(id) : undefined}
+					following={single ? follows.elements.has(single.id) : false}
+					onToggleFollow={single && single.type !== 'connector' ? () => follows.toggleElement(single.id) : undefined}
 					linkEditor={
 						sparkyReady
 							? (el) => (

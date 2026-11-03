@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router'
 import { api } from '../lib/api'
 import { useAuth, useUser } from '../lib/auth'
 import { Logo } from './Logo'
+import { NotificationsBell } from './NotificationsBell'
 import { ThemeSwitch } from './ThemeMenu'
 import { Avatar } from './ui'
 
@@ -50,7 +51,10 @@ export function Layout() {
 						<Logo />
 					</Link>
 					<nav className="hidden flex-1 items-center gap-1 md:flex">{links}</nav>
-					<div className="ml-auto hidden items-center gap-3 md:flex">
+					<div className="ml-auto">
+						<NotificationsBell />
+					</div>
+					<div className="hidden items-center gap-3 md:flex">
 						<ThemeSwitch />
 						<Avatar name={user.displayName} color={user.color} />
 						<button
@@ -63,13 +67,7 @@ export function Layout() {
 							<span className="sr-only">Sign out</span>
 						</button>
 					</div>
-					<button
-						type="button"
-						className="ml-auto rounded p-2 md:hidden"
-						onClick={() => setOpen(!open)}
-						aria-expanded={open}
-						aria-label="Menu"
-					>
+					<button type="button" className="rounded p-2 md:hidden" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Menu">
 						{open ? <X size={20} /> : <Menu size={20} />}
 					</button>
 				</div>

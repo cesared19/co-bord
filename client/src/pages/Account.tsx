@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { Avatar, Button, ErrorText, Field, PageHeader } from '../components/ui'
 import { api, type User } from '../lib/api'
 import { useAuth, useUser } from '../lib/auth'
@@ -74,6 +74,7 @@ export function Account() {
 					{profileMsg && <span className="text-sm text-green-700 dark:text-green-400">{profileMsg}</span>}
 				</div>
 			</form>
+			<NotificationPreferences />
 			<h2 className="mb-4 text-lg font-semibold">Change password</h2>
 			<form onSubmit={savePassword} className="space-y-4">
 				<Field label="Current password" name="currentPassword" type="password" autoComplete="current-password" required />
@@ -94,5 +95,65 @@ export function Account() {
 				</div>
 			</form>
 		</div>
+	)
+}
+
+interface Preferences {
+	mentions: boolean
+	follows: boolean
+	rules: boolean
+}
+
+const PREFERENCES: { key: keyof Preferences; label: string; hint: string }[] = [
+	{ key: 'mentions', label: 'Mentions', hint: 'Someone writes @' + 'your username on a board.' },
+	{ key: 'follows', label: 'Things I follow', hint: 'Changes to boards and items you follow, grouped while unread.' },
+	{ key: 'rules', label: 'Board rules', hint: 'A rule of a board notifies you.' },
+]
+
+/** Which notifications reach the bell. */
+function NotificationPreferences() {
+	const [prefs, setPrefs] = useState<Preferences | null>(null)
+	const [error, setError] = useState('')
+	useEffect(() => {
+		api<Preferences>('/api/account/notifications')
+			.then(setPrefs)
+			.catch((e) => setError(e.message))
+	}, [])
+
+	async function toggle(key: keyof Preferences, value: boolean) {
+		setError('')
+		setPrefs((p) => (p ? { ...p, [key]: value } : p))
+		try {
+			setPrefs(await api<Preferences>('/api/account/notifications', { method: 'PUT', body: { [key]: value } }))
+		} catch (e) {
+			setError((e as Error).message)
+		}
+	}
+
+	return (
+		<section className="mb-10">
+			<h2 className="mb-4 text-lg font-semibold">Notifications</h2>
+			<ErrorText>{error}</ErrorText>
+			{prefs && (
+				<ul className="space-y-3">
+					{PREFERENCES.map((p) => (
+						<li key={p.key}>
+							<label className="flex items-start gap-3 text-sm">
+								<input
+									type="checkbox"
+									checked={prefs[p.key]}
+									onChange={(e) => toggle(p.key, e.target.checked)}
+									className="mt-0.5 accent-brand-600"
+								/>
+								<span>
+									<span className="block font-medium">{p.label}</span>
+									<span className="block text-gray-600 dark:text-gray-400">{p.hint}</span>
+								</span>
+							</label>
+						</li>
+					))}
+				</ul>
+			)}
+		</section>
 	)
 }

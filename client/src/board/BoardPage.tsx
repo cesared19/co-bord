@@ -1,7 +1,8 @@
 import { ArrowLeft, Check, Download, Eye, Link2, WifiOff } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { Logo } from '../components/Logo'
+import { NotificationsBell } from '../components/NotificationsBell'
 import { Avatar, Spinner } from '../components/ui'
 import { api, type BoardInfo, canEdit } from '../lib/api'
 import { useUser } from '../lib/auth'
@@ -10,6 +11,8 @@ import { Canvas } from './Canvas'
 import { download, renderPng } from './exportPng'
 import { PresenceAvatars } from './Presence'
 import { BoardEnvContext, useConfluenceInfo } from './confluence'
+import { FollowBoardButton, useFollows } from './follows'
+import type { Member } from '../lib/api'
 import { useSparkyInfo } from './sparky'
 import { type BoardConnection, type Peer, useBoardConnection, useBoardDoc } from './useBoardDoc'
 
@@ -70,7 +73,17 @@ function BoardSession({
 	const { elements, peers, status, synced } = useBoardDoc(connection, user, readOnly)
 	const sparky = useSparkyInfo(board.projectId)
 	const confluence = useConfluenceInfo(board.projectId)
-	const env = useMemo(() => ({ projectId: board.projectId, confluence }), [board.projectId, confluence])
+	const follows = useFollows(board.id)
+	const [members, setMembers] = useState<Member[]>([])
+	useEffect(() => {
+		api<{ members: Member[] }>(`/api/projects/${board.projectId}/members`)
+			.then((r) => setMembers(r.members))
+			.catch(() => {})
+	}, [board.projectId])
+	const env = useMemo(() => ({ projectId: board.projectId, confluence, members }), [board.projectId, confluence, members])
+	// a notification can point at one element: show it once the board is there
+	const [params] = useSearchParams()
+	const focusId = params.get('el')
 	const [copied, setCopied] = useState(false)
 	const [jumpTo, setJumpTo] = useState<Peer | null>(null)
 
@@ -135,6 +148,8 @@ function BoardSession({
 							<WifiOff size={14} /> <span className="hidden sm:inline">Reconnecting…</span>
 						</span>
 					)}
+					<NotificationsBell />
+					<FollowBoardButton follows={follows} />
 					<PresenceAvatars peers={peers} onPick={(peer) => setJumpTo({ ...peer })} />
 					<Avatar name={user.displayName} color={user.color} size={30} title={`${user.displayName} (you)`} />
 					<button
@@ -183,6 +198,8 @@ function BoardSession({
 							projectId={board.projectId}
 							sparky={sparky}
 							confluence={confluence}
+							follows={follows}
+							focusId={focusId}
 						/>
 					</BoardEnvContext.Provider>
 				)}

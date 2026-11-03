@@ -112,6 +112,39 @@ const migrations: { version: string; sql: string }[] = [
 			);
 		`,
 	},
+	{
+		version: '0.0.5',
+		sql: `
+			-- in-app notifications: mentions, changes to what people follow, and (later) rules
+			CREATE TABLE notifications (
+				id SERIAL PRIMARY KEY,
+				user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+				kind TEXT NOT NULL CHECK (kind IN ('mention', 'follow', 'rule')),
+				board_id UUID REFERENCES boards (id) ON DELETE CASCADE,
+				element_id TEXT,
+				actor_id INTEGER REFERENCES users (id) ON DELETE SET NULL,
+				text TEXT NOT NULL,
+				count INTEGER NOT NULL DEFAULT 1,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+				updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+				read_at TIMESTAMPTZ
+			);
+			CREATE INDEX notifications_user_idx ON notifications (user_id, updated_at DESC);
+
+			-- boards ('' element) and blocks people follow
+			CREATE TABLE follows (
+				user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+				board_id UUID NOT NULL REFERENCES boards (id) ON DELETE CASCADE,
+				element_id TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (user_id, board_id, element_id)
+			);
+			CREATE INDEX follows_board_idx ON follows (board_id);
+
+			ALTER TABLE users ADD COLUMN notify_mentions BOOLEAN NOT NULL DEFAULT TRUE;
+			ALTER TABLE users ADD COLUMN notify_follows BOOLEAN NOT NULL DEFAULT TRUE;
+			ALTER TABLE users ADD COLUMN notify_rules BOOLEAN NOT NULL DEFAULT TRUE;
+		`,
+	},
 ]
 
 export async function migrate(db: Db): Promise<void> {
