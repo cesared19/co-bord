@@ -332,6 +332,55 @@ interface Step {
 }
 
 /**
+ * Coverage of the steps in the board or a frame (`frameId`), with their tests' results in `build` (the current
+ * one when empty). Shared by the coverage panel and publishing.
+ */
+export function useCoverage(projectId: number, elements: ElementMap, frameId: string | null, build: string, enabled: boolean) {
+	const frame = frameId ? elements.get(frameId) : undefined
+	const stepEls = useMemo(() => {
+		const inside = frame?.type === 'frame' ? new Set(frameContents(frame, elements)) : null
+		return flowOrder(
+			[...elements.values()].filter((el): el is TextBox => isStep(el) && (!inside || inside.has(el.id))),
+			elements,
+		)
+	}, [elements, frame])
+	const links = useMemo(() => {
+		const all = new Map<string, SparkyLink>()
+		for (const el of stepEls) for (const l of el.links ?? []) all.set(linkKey(l), l)
+		return [...all.values()]
+	}, [stepEls])
+	const { results, build: shownBuild, error, loading } = useLinkResults(projectId, links, enabled, build || undefined)
+	const steps: Step[] = stepEls.map((el) => ({ el, covered: !!el.links?.length, status: elementStatus(el.links, results) }))
+	const covered = steps.filter((s) => s.covered)
+	const percent = steps.length ? Math.round((covered.length / steps.length) * 100) : 0
+	const by = (status: SparkyStatus) => covered.filter((s) => s.status === status).length
+	const overall = worstStatus(covered.map((s) => s.status))
+
+	/** The report as sent to Confluence. */
+	const report = () => ({
+		percent,
+		covered: covered.length,
+		total: steps.length,
+		build: shownBuild?.buildNumber ?? null,
+		counts: {
+			...Object.fromEntries(
+				(['PASS', 'FAIL', 'BLOCKED', 'SKIP', 'NOT_RUN'] as SparkyStatus[]).map((st) => [STATUS_STYLE[st].label, by(st)]),
+			),
+			'Not covered': steps.length - covered.length,
+		},
+		steps: steps.map((st) => ({
+			text: st.el.text.replace(/\s+/g, ' ').trim(),
+			status: st.covered ? (st.status ? STATUS_STYLE[st.status].label : 'No result') : 'Not covered',
+			links: (st.el.links ?? []).map((l) => {
+				const r = results.get(linkKey(l))
+				return { name: r?.name || l.label, status: r?.status ? STATUS_STYLE[r.status].label : r?.missing ? 'Not found' : 'No result' }
+			}),
+		})),
+	})
+	return { steps, covered, percent, by, overall, results, shownBuild, error, loading, report }
+}
+
+/**
  * Coverage of a flow: in the whole board or one frame, the steps (shapes and sticky notes with text) that have
  * linked tests, and how those tests did in a build.
  */
@@ -358,25 +407,13 @@ export function CoveragePanel({
 	const [build, setBuild] = useState('')
 	const scopeFrame = frames.find((f) => f.id === scope)
 
-	const stepEls = useMemo(() => {
-		const inside = scopeFrame ? new Set(frameContents(scopeFrame, elements)) : null
-		return flowOrder(
-			[...elements.values()].filter((el): el is TextBox => isStep(el) && (!inside || inside.has(el.id))),
-			elements,
-		)
-	}, [elements, scopeFrame])
-	const links = useMemo(() => {
-		const all = new Map<string, SparkyLink>()
-		for (const el of stepEls) for (const l of el.links ?? []) all.set(linkKey(l), l)
-		return [...all.values()]
-	}, [stepEls])
-	const { results, build: shownBuild, error, loading } = useLinkResults(projectId, links, true, build || undefined)
-
-	const steps: Step[] = stepEls.map((el) => ({ el, covered: !!el.links?.length, status: elementStatus(el.links, results) }))
-	const covered = steps.filter((s) => s.covered)
-	const percent = steps.length ? Math.round((covered.length / steps.length) * 100) : 0
-	const by = (status: SparkyStatus) => covered.filter((s) => s.status === status).length
-	const overall = worstStatus(covered.map((s) => s.status))
+	const { steps, covered, percent, by, overall, results, shownBuild, error, loading } = useCoverage(
+		projectId,
+		elements,
+		scopeFrame?.id ?? null,
+		build,
+		true,
+	)
 	const builds = info.project?.builds ?? []
 
 	function downloadCsv() {

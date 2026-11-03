@@ -1,4 +1,5 @@
 import {
+	BookOpenText,
 	FlaskConical,
 	Download,
 	ExternalLink,
@@ -44,6 +45,8 @@ interface Props {
 	onEditText: () => void
 	onWrapInFrame: () => void
 	onExportFrame: (id: string) => void
+	/** Opens the publish dialog for a frame, when the project is connected to Confluence. */
+	onPublishFrame?: (frameId: string) => void
 	/** The SparkyTC link picker for one element, when the project is connected. */
 	linkEditor?: (el: BoardElement) => ReactNode
 }
@@ -63,6 +66,7 @@ export function ContextToolbar({
 	onWrapInFrame,
 	onExportFrame,
 	linkEditor,
+	onPublishFrame,
 }: Props) {
 	const ref = useRef<HTMLDivElement>(null)
 	const [pos, setPos] = useState({ left: 0, top: 0 })
@@ -331,6 +335,12 @@ export function ContextToolbar({
 							<button type="button" title="Download the frame as PNG" className={btn} onClick={() => onExportFrame(frames[0].id)}>
 								<Download size={16} />
 							</button>
+							{onPublishFrame && (
+								<button type="button" title="Publish to Confluence" className={btn} onClick={() => onPublishFrame(frames[0].id)}>
+									<BookOpenText size={16} />
+									<span className="sr-only">Publish to Confluence</span>
+								</button>
+							)}
 						</>
 					)}
 					<Divider />

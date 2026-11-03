@@ -61,6 +61,7 @@ export function ErrorText({ children }: { children: ReactNode }) {
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
 	const ref = useRef<HTMLDialogElement>(null)
+	const titleId = useId()
 	useEffect(() => {
 		const dialog = ref.current
 		dialog?.showModal()
@@ -69,6 +70,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 	return (
 		<dialog
 			ref={ref}
+			aria-labelledby={titleId}
 			onCancel={(e) => {
 				e.preventDefault()
 				onClose()
@@ -76,7 +78,9 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 			className="m-auto w-[calc(100%-2rem)] max-w-md rounded-xl bg-white p-0 text-gray-900 shadow-xl backdrop:bg-black/40 dark:bg-gray-900 dark:text-gray-100"
 		>
 			<div className="flex items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
-				<h2 className="text-base font-semibold">{title}</h2>
+				<h2 id={titleId} className="text-base font-semibold">
+					{title}
+				</h2>
 				<button
 					type="button"
 					onClick={onClose}

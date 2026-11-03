@@ -1,4 +1,6 @@
-import { ChevronLeft, ChevronRight, ExternalLink, FileText, Film, Globe, Image as ImageIcon, PlaySquare } from 'lucide-react'
+import { BookOpen, ChevronLeft, ChevronRight, ExternalLink, FileText, Film, Globe, Image as ImageIcon, PlaySquare } from 'lucide-react'
+import { api } from '../lib/api'
+import { type ConfluencePageCard, useBoardEnv } from './confluence'
 import { memo, useEffect, useRef, useState } from 'react'
 import { embedUrl, MEDIA_HEADER, mediaUrl, openUrl, safeUrl } from './media'
 import { loadPdf, renderPage } from './pdf'
@@ -12,6 +14,7 @@ const icons: Record<MediaKind, typeof Film> = {
 	drive: Film,
 	vimeo: PlaySquare,
 	link: Globe,
+	confluence: BookOpen,
 }
 
 interface Props {
@@ -52,6 +55,8 @@ export const MediaView = memo(function MediaView({ el, active, dark }: Props) {
 			</div>
 		)
 	}
+
+	if (el.kind === 'confluence') return <ConfluenceView el={el} frame={frame} />
 
 	const Icon = icons[el.kind]
 	const open = openUrl(el)
@@ -197,6 +202,64 @@ function PdfView({ url, width }: { url: string; width: number }) {
 					</button>
 				</div>
 			)}
+		</div>
+	)
+}
+
+/** A Confluence page as a card: read through the project's connection, refreshed when the board opens. */
+function ConfluenceView({ el, frame }: { el: MediaElement; frame: React.CSSProperties }) {
+	const { projectId, confluence } = useBoardEnv()
+	const [card, setCard] = useState<ConfluencePageCard | null>(null)
+	const [error, setError] = useState('')
+	const connected = !!confluence?.connected
+
+	useEffect(() => {
+		if (!connected || !projectId) return
+		let cancelled = false
+		api<ConfluencePageCard>(`/api/projects/${projectId}/confluence/pages/${encodeURIComponent(el.src)}`)
+			.then((c) => !cancelled && setCard(c))
+			.catch((e) => !cancelled && setError(e.message))
+		return () => {
+			cancelled = true
+		}
+	}, [connected, projectId, el.src])
+
+	const title = card?.title ?? el.name
+	return (
+		<div data-el={el.id} style={frame} className="flex flex-col text-gray-800 dark:text-gray-100">
+			<div
+				style={{ height: MEDIA_HEADER, fontSize: 13 }}
+				className="flex shrink-0 cursor-move items-center gap-2 border-b border-gray-200 bg-[#e9f2ff] px-2.5 dark:border-gray-700 dark:bg-[#1c2b41]"
+			>
+				<BookOpen size={15} className="shrink-0 text-[#0c66e4] dark:text-[#579dff]" />
+				<span className="min-w-0 flex-1 truncate font-medium">Confluence{card?.spaceName ? ` · ${card.spaceName}` : ''}</span>
+				{card?.url && (
+					<a
+						href={card.url}
+						target="_blank"
+						rel="noopener noreferrer"
+						title="Open in Confluence"
+						onPointerDown={(e) => e.stopPropagation()}
+						className="rounded p-1 text-gray-500 hover:bg-white/60 hover:text-gray-900 dark:hover:bg-gray-700 dark:hover:text-white"
+					>
+						<ExternalLink size={14} />
+						<span className="sr-only">Open in Confluence</span>
+					</a>
+				)}
+			</div>
+			<div className="min-h-0 flex-1 overflow-hidden px-3 py-2.5" style={{ pointerEvents: 'none' }}>
+				<p className="text-base leading-snug font-semibold">{title}</p>
+				{card?.updatedAt && <p className="mt-0.5 text-xs text-gray-500">Updated {new Date(card.updatedAt).toLocaleDateString()}</p>}
+				{!connected ? (
+					<p className="mt-2 text-xs text-gray-500">Connect Confluence in the project settings to show this page.</p>
+				) : error ? (
+					<p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+				) : card ? (
+					<p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-300">{card.excerpt || 'This page is empty.'}</p>
+				) : (
+					<p className="mt-2 text-xs text-gray-500">Loading…</p>
+				)}
+			</div>
 		</div>
 	)
 }

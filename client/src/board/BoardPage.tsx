@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Download, Eye, Link2, WifiOff } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { Logo } from '../components/Logo'
 import { Avatar, Spinner } from '../components/ui'
@@ -9,6 +9,7 @@ import { useIsDark } from '../lib/theme'
 import { Canvas } from './Canvas'
 import { download, renderPng } from './exportPng'
 import { PresenceAvatars } from './Presence'
+import { BoardEnvContext, useConfluenceInfo } from './confluence'
 import { useSparkyInfo } from './sparky'
 import { type BoardConnection, type Peer, useBoardConnection, useBoardDoc } from './useBoardDoc'
 
@@ -68,6 +69,8 @@ function BoardSession({
 	const { store, provider } = connection
 	const { elements, peers, status, synced } = useBoardDoc(connection, user, readOnly)
 	const sparky = useSparkyInfo(board.projectId)
+	const confluence = useConfluenceInfo(board.projectId)
+	const env = useMemo(() => ({ projectId: board.projectId, confluence }), [board.projectId, confluence])
 	const [copied, setCopied] = useState(false)
 	const [jumpTo, setJumpTo] = useState<Peer | null>(null)
 
@@ -165,20 +168,23 @@ function BoardSession({
 						<Spinner />
 					</div>
 				) : (
-					<Canvas
-						store={store}
-						elements={elements}
-						peers={peers}
-						provider={provider}
-						readOnly={readOnly}
-						boardId={board.id}
-						dark={dark}
-						jumpTo={jumpTo}
-						user={user}
-						boardName={board.name}
-						projectId={board.projectId}
-						sparky={sparky}
-					/>
+					<BoardEnvContext.Provider value={env}>
+						<Canvas
+							store={store}
+							elements={elements}
+							peers={peers}
+							provider={provider}
+							readOnly={readOnly}
+							boardId={board.id}
+							dark={dark}
+							jumpTo={jumpTo}
+							user={user}
+							boardName={board.name}
+							projectId={board.projectId}
+							sparky={sparky}
+							confluence={confluence}
+						/>
+					</BoardEnvContext.Provider>
 				)}
 			</div>
 		</div>

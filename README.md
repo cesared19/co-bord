@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.4.0)
+## Features (0.5.0)
 
 ### Boards
 
@@ -46,6 +46,13 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Coverage** (top right of the board) treats the shapes and sticky notes with text as the steps of a flow, in the whole board or one frame: the share of steps with linked tests, how they did in a build you choose, and every step in the order of the flow. Click a step to see it on the board, or download the report as CSV.
 -  Results refresh every minute.
 
+### Confluence
+
+-  An admin connects a project to a Confluence Cloud space in the project's **Settings**: the site, an Atlassian account's email and API token (stored encrypted), the space key and, optionally, a parent page for new pages.
+-  **Confluence pages on boards**: search a page by title in the media menu, or paste a page's address on the board. The card shows the page's title, space, last update and the start of its text, and opens the page.
+-  **Publish** (top right of the board, or the button of a selected frame) creates a Confluence page from the whole board or one frame: its picture attached to the page, a link back to the board and, when the project is connected to SparkyTC, the test coverage report with a status per step. Publishing again updates the same page (a new version) unless you choose a new one.
+-  The account needs permission to view and add pages and attachments in the space. Pages are published in its name, saying who published them.
+
 ### Real time
 
 -  Everyone on a board sees the others' changes as they happen, their cursors with their names, what each one has selected and who is typing where.
@@ -77,7 +84,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 2. ~~Live cursors, selections and changes~~ (0.1.0)
 3. ~~Embedded images, videos (YouTube, Google Drive, Vimeo, uploaded) and PDFs as resizable blocks that play and page inside the board~~ (0.2.0)
 4. ~~Templates: retrospectives (columns, votes, timer), workflows and design documents; frames~~ (0.3.0)
-5. ~~Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage~~ (0.4.0); Confluence pages embedded as blocks, and boards published to Confluence
+5. ~~Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage~~ (0.4.0); ~~Confluence pages embedded as blocks, and boards published to Confluence~~ (0.5.0)
 6. Automations: card rules (for example, create a Jira issue when a note moves to a column), generate SparkyTC test cases from a flow, guided retrospectives and notifications
 
 ## Running it

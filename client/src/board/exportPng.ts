@@ -221,7 +221,7 @@ function drawMedia(ctx: CanvasRenderingContext2D, el: MediaElement, picture: Pic
 		ctx.font = `600 13px ${FONT}`
 		ctx.textBaseline = 'middle'
 		ctx.textAlign = 'left'
-		ctx.fillText(ellipsis(ctx, el.name, el.w - 20), 10, header / 2)
+		ctx.fillText(ellipsis(ctx, el.kind === 'confluence' ? 'Confluence' : el.name, el.w - 20), 10, header / 2)
 	}
 	const body = { y: header, h: el.h - header }
 	if (el.kind === 'pdf' && picture) {
@@ -231,6 +231,14 @@ function drawMedia(ctx: CanvasRenderingContext2D, el: MediaElement, picture: Pic
 		const w = picture.width * scale
 		const h = picture.height * scale
 		ctx.drawImage(picture, (el.w - w) / 2, body.y + (body.h - h) / 2, w, h)
+	} else if (el.kind === 'confluence') {
+		ctx.fillStyle = dark ? '#e5e7eb' : '#1f2937'
+		ctx.font = `600 16px ${FONT}`
+		ctx.textBaseline = 'top'
+		ctx.fillText(ellipsis(ctx, el.name, el.w - 24), 12, body.y + 12)
+		ctx.fillStyle = '#6b7280'
+		ctx.font = `400 13px ${FONT}`
+		ctx.fillText('Confluence page', 12, body.y + 36)
 	} else if (el.kind === 'link') {
 		ctx.fillStyle = '#c01c37'
 		ctx.font = `400 13px ${FONT}`

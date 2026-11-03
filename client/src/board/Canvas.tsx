@@ -6,7 +6,10 @@ import { useServerClock, useSession } from './session'
 import { TemplatePicker } from './TemplatePicker'
 import { boardLinks, type SparkyInfo, useLinkResults } from './sparky'
 import { CoveragePanel, LinkBadges, LinkEditor, LinksPopover } from './SparkyLinks'
-import { FlaskConical } from 'lucide-react'
+import { BookOpenText, FlaskConical } from 'lucide-react'
+import { type ConfluenceInfo, confluencePageId, searchConfluence } from './confluence'
+import { PublishDialog } from './PublishDialog'
+import { api } from '../lib/api'
 import type { Template } from './templates'
 import { download, renderPng } from './exportPng'
 import { ContextToolbar } from './ContextToolbar'
@@ -83,6 +86,8 @@ interface Props {
 	projectId: number
 	/** The project's SparkyTC connection, once loaded. */
 	sparky: SparkyInfo | null
+	/** The project's Confluence connection, once loaded. */
+	confluence: ConfluenceInfo | null
 }
 
 const viewKey = (boardId: string) => `co-bord:view:${boardId}`
@@ -101,7 +106,21 @@ const isTyping = (target: EventTarget | null) =>
 	target instanceof HTMLElement &&
 	(target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || !!target.closest('dialog'))
 
-export function Canvas({ store, elements, peers, provider, readOnly, boardId, dark, jumpTo, user, boardName, projectId, sparky }: Props) {
+export function Canvas({
+	store,
+	elements,
+	peers,
+	provider,
+	readOnly,
+	boardId,
+	dark,
+	jumpTo,
+	user,
+	boardName,
+	projectId,
+	sparky,
+	confluence,
+}: Props) {
 	const containerRef = useRef<HTMLDivElement>(null)
 	const [size, setSize] = useState({ w: 0, h: 0 })
 	const savedCamera = useRef(loadCamera(boardId))
@@ -201,6 +220,9 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 	const linkResults = useLinkResults(projectId, allLinks, sparkyReady)
 	const [openLinks, setOpenLinks] = useState<string | null>(null)
 	const [showCoverage, setShowCoverage] = useState(false)
+	const confluenceReady = !!confluence?.connected && !confluence.error
+	/** The publish dialog, for the whole board ('') or a frame. */
+	const [publishing, setPublishing] = useState<string | null>(null)
 
 	const localPoint = (e: { clientX: number; clientY: number }): Point => {
 		const rect = containerRef.current!.getBoundingClientRect()
@@ -491,6 +513,22 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 			setCamera(fitCamera({ x: spot.x, y: spot.y, w: bounds.w, h: bounds.h + 40 }, size.w, size.h, 60, 1))
 		},
 		[readOnly, store, size, freeSpot],
+	)
+
+	/** A Confluence page card, named after the page. */
+	const insertConfluence = useCallback(
+		async (pageId: string, at: Point, title?: string) => {
+			let name = title
+			if (!name) {
+				try {
+					name = (await api<{ title: string }>(`/api/projects/${projectId}/confluence/pages/${pageId}`)).title
+				} catch {
+					name = 'Confluence page'
+				}
+			}
+			insertMedia([{ kind: 'confluence', src: pageId, name, w: 420, h: 240 }], at)
+		},
+		[projectId, insertMedia],
 	)
 
 	// ---------- camera ----------
@@ -924,6 +962,11 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 			const text = e.clipboardData?.getData('text/plain') ?? ''
 			if (!text) return
 			e.preventDefault()
+			const pageId = confluencePageId(text, confluence)
+			if (pageId) {
+				void insertConfluence(pageId, at)
+				return
+			}
 			const media = !/\s/.test(text.trim()) ? parseMediaUrl(text) : null
 			if (media) {
 				insertMedia([media], at)
@@ -959,7 +1002,22 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 			window.removeEventListener('cut', onCopy)
 			window.removeEventListener('paste', onPaste)
 		}
-	}, [store, readOnly, size, select, duplicate, deleteSelection, startEditing, detachedSelection, fit, zoomBy, insertFiles, insertMedia])
+	}, [
+		store,
+		readOnly,
+		size,
+		select,
+		duplicate,
+		deleteSelection,
+		startEditing,
+		detachedSelection,
+		fit,
+		zoomBy,
+		insertFiles,
+		insertMedia,
+		insertConfluence,
+		confluence,
+	])
 
 	// ---------- render ----------
 
@@ -1258,15 +1316,39 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					)}
 				</div>
 			)}
-			{sparkyReady && !showCoverage && (
-				<button
-					type="button"
-					data-ui
-					onClick={() => setShowCoverage(true)}
-					className="absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-				>
-					<FlaskConical size={16} /> Coverage
-				</button>
+			{!showCoverage && (sparkyReady || (confluenceReady && !readOnly)) && (
+				<div data-ui className="absolute top-3 right-3 z-10 flex gap-2">
+					{confluenceReady && !readOnly && (
+						<button
+							type="button"
+							onClick={() => setPublishing('')}
+							className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+						>
+							<BookOpenText size={16} /> Publish
+						</button>
+					)}
+					{sparkyReady && (
+						<button
+							type="button"
+							onClick={() => setShowCoverage(true)}
+							className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+						>
+							<FlaskConical size={16} /> Coverage
+						</button>
+					)}
+				</div>
+			)}
+			{publishing !== null && confluence && (
+				<PublishDialog
+					boardId={boardId}
+					boardName={boardName}
+					projectId={projectId}
+					elements={elements}
+					confluence={confluence}
+					withCoverage={sparkyReady}
+					initialFrameId={publishing || null}
+					onClose={() => setPublishing(null)}
+				/>
 			)}
 			{sparkyReady && showCoverage && (
 				<CoveragePanel
@@ -1312,12 +1394,25 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					onRedo={() => store.undo.redo()}
 					onFiles={(files) => insertFiles(files, viewCenter())}
 					onLink={(url) => {
+						const pageId = confluencePageId(url, confluence)
+						if (pageId) {
+							void insertConfluence(pageId, viewCenter())
+							return null
+						}
 						const media = parseMediaUrl(url)
 						if (!media) return 'Paste a web address starting with http:// or https://'
 						insertMedia([media], viewCenter())
 						return null
 					}}
 					onTemplates={() => setShowTemplates(true)}
+					confluence={
+						confluenceReady
+							? {
+									search: (q) => searchConfluence(projectId, q),
+									onPick: (page) => void insertConfluence(page.id, viewCenter(), page.title),
+								}
+							: undefined
+					}
 					facilitation={<FacilitationMenu session={session.session} state={session} userName={user.displayName} />}
 				/>
 			)}
@@ -1346,6 +1441,7 @@ export function Canvas({ store, elements, peers, provider, readOnly, boardId, da
 					onEditText={() => single && startEditing(single.id)}
 					onWrapInFrame={wrapInFrame}
 					onExportFrame={exportFrame}
+					onPublishFrame={confluenceReady ? (id) => setPublishing(id) : undefined}
 					linkEditor={
 						sparkyReady
 							? (el) => (

@@ -82,11 +82,12 @@ export interface ConnectorElement {
 	label: string
 }
 
-export type MediaKind = 'image' | 'video' | 'pdf' | 'youtube' | 'drive' | 'vimeo' | 'link'
+export type MediaKind = 'image' | 'video' | 'pdf' | 'youtube' | 'drive' | 'vimeo' | 'link' | 'confluence'
 
 /**
  * Embedded content shown as a resizable block. Uploads keep `assetId` (served at /api/assets/:id);
- * YouTube, Drive and Vimeo keep the video id in `src`; the other kinds keep a URL.
+ * YouTube, Drive and Vimeo keep the video id in `src`, Confluence pages their page id (read through the project's
+ * connection); the other kinds keep a URL.
  */
 export interface MediaElement extends Box {
 	type: 'media'

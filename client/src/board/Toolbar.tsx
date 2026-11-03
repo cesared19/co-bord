@@ -78,13 +78,27 @@ interface ToolbarProps {
 	onRedo: () => void
 	onFiles: (files: File[]) => void
 	onTemplates: () => void
+	/** Search and add Confluence pages, when the project is connected. */
+	confluence?: ConfluencePicker
 	/** Timer and voting controls, shown in a popover. */
 	facilitation: ReactNode
 	/** Returns an error to show, or null when the link was added. */
 	onLink: (url: string) => string | null
 }
 
-export function Toolbar({ tool, shapeKind, onTool, onShape, onUndo, onRedo, onFiles, onLink, onTemplates, facilitation }: ToolbarProps) {
+export function Toolbar({
+	tool,
+	shapeKind,
+	onTool,
+	onShape,
+	onUndo,
+	onRedo,
+	onFiles,
+	onLink,
+	onTemplates,
+	facilitation,
+	confluence,
+}: ToolbarProps) {
 	const [shapesOpen, setShapesOpen] = useState(false)
 	const ref = useRef<HTMLDivElement>(null)
 	useEffect(() => {
@@ -139,7 +153,7 @@ export function Toolbar({ tool, shapeKind, onTool, onShape, onUndo, onRedo, onFi
 				<ToolButton label="Connector" shortcut="L" active={tool === 'connector'} onClick={() => onTool('connector')}>
 					<MoveUpRight size={19} />
 				</ToolButton>
-				<MediaMenu onFiles={onFiles} onLink={onLink} />
+				<MediaMenu onFiles={onFiles} onLink={onLink} confluence={confluence} />
 				<ToolButton label="Frame" shortcut="F" active={tool === 'frame'} onClick={() => onTool('frame')}>
 					<Frame size={19} />
 				</ToolButton>
@@ -204,7 +218,20 @@ export function ZoomControls({
 	)
 }
 
-function MediaMenu({ onFiles, onLink }: { onFiles: (files: File[]) => void; onLink: (url: string) => string | null }) {
+interface ConfluencePicker {
+	search: (q: string) => Promise<{ id: string; title: string }[]>
+	onPick: (page: { id: string; title: string }) => void
+}
+
+function MediaMenu({
+	onFiles,
+	onLink,
+	confluence,
+}: {
+	onFiles: (files: File[]) => void
+	onLink: (url: string) => string | null
+	confluence?: ConfluencePicker
+}) {
 	const [open, setOpen] = useState(false)
 	const [error, setError] = useState('')
 	const ref = useRef<HTMLDivElement>(null)
@@ -279,9 +306,10 @@ function MediaMenu({ onFiles, onLink }: { onFiles: (files: File[]) => void; onLi
 						{error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 						<p className="text-xs text-gray-500">
 							YouTube, Google Drive or Vimeo, or a link to an image, a video or a PDF. Drive files play for people who can open them in
-							Google Drive.
+							Google Drive.{confluence ? ' Confluence page addresses show the page.' : ''}
 						</p>
 					</form>
+					{confluence && <ConfluenceSearch picker={confluence} onPicked={() => setOpen(false)} />}
 				</div>
 			)}
 		</div>
@@ -350,6 +378,62 @@ export function FramesMenu({ frames, onPick }: { frames: { id: string; title: st
 					))}
 				</ul>
 			)}
+		</div>
+	)
+}
+
+function ConfluenceSearch({ picker, onPicked }: { picker: ConfluencePicker; onPicked: () => void }) {
+	const [query, setQuery] = useState('')
+	const [pages, setPages] = useState<{ id: string; title: string }[] | null>(null)
+	const [error, setError] = useState('')
+	useEffect(() => {
+		let cancelled = false
+		const id = setTimeout(() => {
+			picker
+				.search(query)
+				.then((p) => {
+					if (cancelled) return
+					setPages(p)
+					setError('')
+				})
+				.catch((e) => !cancelled && setError(e.message))
+		}, 250)
+		return () => {
+			cancelled = true
+			clearTimeout(id)
+		}
+	}, [query, picker])
+	return (
+		<div className="space-y-1.5 border-t border-gray-200 pt-3 dark:border-gray-700">
+			<label htmlFor="confluence-search" className="block text-sm font-medium">
+				Confluence page
+			</label>
+			<input
+				id="confluence-search"
+				value={query}
+				onChange={(e) => setQuery(e.target.value)}
+				placeholder="Search by title"
+				autoComplete="off"
+				className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-brand-600 focus:outline-none dark:border-gray-600 dark:bg-gray-800"
+			/>
+			{error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+			<ul className="max-h-40 overflow-auto">
+				{pages?.length === 0 && <li className="px-1 py-1 text-xs text-gray-500">No pages found.</li>}
+				{pages?.map((p) => (
+					<li key={p.id}>
+						<button
+							type="button"
+							onClick={() => {
+								picker.onPick(p)
+								onPicked()
+							}}
+							className="w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+						>
+							{p.title}
+						</button>
+					</li>
+				))}
+			</ul>
 		</div>
 	)
 }

@@ -87,6 +87,31 @@ const migrations: { version: string; sql: string }[] = [
 			ALTER TABLE projects ADD COLUMN sparkytc_token TEXT;
 		`,
 	},
+	{
+		version: '0.0.4',
+		sql: `
+			-- Confluence Cloud connection per project: site, account email, API token (encrypted), space and parent page
+			ALTER TABLE projects ADD COLUMN confluence_url TEXT;
+			ALTER TABLE projects ADD COLUMN confluence_email TEXT;
+			ALTER TABLE projects ADD COLUMN confluence_token TEXT;
+			ALTER TABLE projects ADD COLUMN confluence_space_key TEXT;
+			ALTER TABLE projects ADD COLUMN confluence_space_id TEXT;
+			ALTER TABLE projects ADD COLUMN confluence_parent_id TEXT;
+
+			-- the Confluence page a board (or one of its frames) was last published to, to update it next time
+			CREATE TABLE confluence_publications (
+				id SERIAL PRIMARY KEY,
+				board_id UUID NOT NULL REFERENCES boards (id) ON DELETE CASCADE,
+				frame_id TEXT NOT NULL DEFAULT '',
+				page_id TEXT NOT NULL,
+				page_url TEXT NOT NULL,
+				title TEXT NOT NULL,
+				published_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+				published_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+				UNIQUE (board_id, frame_id)
+			);
+		`,
+	},
 ]
 
 export async function migrate(db: Db): Promise<void> {

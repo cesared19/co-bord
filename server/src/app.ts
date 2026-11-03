@@ -18,6 +18,7 @@ import { userRoutes } from './routes/users.js'
 import { FileStorage } from './storage.js'
 import { SecretBox } from './crypto.js'
 import { sparkyRoutes } from './routes/sparkytc.js'
+import { confluenceRoutes } from './routes/confluence.js'
 
 export async function buildApp(config: Config, db: Db, opts: { logger?: boolean } = {}) {
 	const app = Fastify({ logger: opts.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024 })
@@ -44,6 +45,7 @@ export async function buildApp(config: Config, db: Db, opts: { logger?: boolean 
 	boardRoutes(app, ctx)
 	assetRoutes(app, ctx)
 	sparkyRoutes(app, ctx)
+	confluenceRoutes(app, ctx)
 
 	const collab = createCollab(ctx)
 	app.get('/collab', { websocket: true }, (socket, req) => collab.handle(socket, req.raw))
