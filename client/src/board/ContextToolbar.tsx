@@ -2,7 +2,11 @@ import {
 	Bell,
 	BellRing,
 	BookOpenText,
+	CircleCheck,
 	FlaskConical,
+	ListChecks,
+	LoaderCircle,
+	Ticket,
 	Download,
 	ExternalLink,
 	Frame,
@@ -55,6 +59,10 @@ interface Props {
 	onPublishFrame?: (frameId: string) => void
 	/** The SparkyTC link picker for one element, when the project is connected. */
 	linkEditor?: (el: BoardElement) => ReactNode
+	/** Opens the generate tests dialog for a frame, when the project is connected to SparkyTC. */
+	onGenerateTests?: (frameId: string) => void
+	/** Creates a Jira issue for a card, when the project is connected to Jira. */
+	onCreateIssue?: (elementId: string) => Promise<void>
 }
 
 const btn =
@@ -75,9 +83,12 @@ export function ContextToolbar({
 	onPublishFrame,
 	following,
 	onToggleFollow,
+	onGenerateTests,
+	onCreateIssue,
 }: Props) {
 	const ref = useRef<HTMLDivElement>(null)
 	const [pos, setPos] = useState({ left: 0, top: 0 })
+	const [issueState, setIssueState] = useState<{ id: string; busy: boolean; error: string } | null>(null)
 
 	useLayoutEffect(() => {
 		const el = ref.current
@@ -96,6 +107,9 @@ export function ContextToolbar({
 	const stickies = boxes.filter((el) => el.type === 'sticky')
 	const connectors = selected.filter((el): el is ConnectorElement => el.type === 'connector')
 	const frames = selected.filter(isFrame)
+	/** Cards can be marked done and get a Jira issue. */
+	const cards = boxes.filter((el) => el.type !== 'text')
+	const allDone = cards.length > 0 && cards.every((el) => el.done)
 	const first = <T,>(list: T[]) => list[0]
 
 	const patch = (targets: BoardElement[], value: Record<string, unknown>) => {
@@ -343,6 +357,12 @@ export function ContextToolbar({
 							<button type="button" title="Download the frame as PNG" className={btn} onClick={() => onExportFrame(frames[0].id)}>
 								<Download size={16} />
 							</button>
+							{onGenerateTests && (
+								<button type="button" title="Generate tests from the flow" className={btn} onClick={() => onGenerateTests(frames[0].id)}>
+									<ListChecks size={16} />
+									<span className="sr-only">Generate tests from the flow</span>
+								</button>
+							)}
 							{onPublishFrame && (
 								<button type="button" title="Publish to Confluence" className={btn} onClick={() => onPublishFrame(frames[0].id)}>
 									<BookOpenText size={16} />
@@ -369,6 +389,49 @@ export function ContextToolbar({
 						<ExternalLink size={16} />
 						<span className="sr-only">Open in a new tab</span>
 					</a>
+					<Divider />
+				</>
+			)}
+			{cards.length > 0 && (
+				<>
+					<button
+						type="button"
+						title={allDone ? 'Done. Click to mark it not done.' : 'Mark as done'}
+						aria-pressed={allDone}
+						className={`${btn} ${allDone ? on : ''}`}
+						onClick={() => patch(cards, { done: !allDone })}
+					>
+						<CircleCheck size={16} className={allDone ? 'text-green-600' : ''} />
+						<span className="sr-only">{allDone ? 'Mark as not done' : 'Mark as done'}</span>
+					</button>
+					{onCreateIssue && cards.length === 1 && !cards[0].issue && (
+						<button
+							type="button"
+							title={issueState?.id === cards[0].id && issueState.error ? issueState.error : 'Create a Jira issue'}
+							disabled={issueState?.id === cards[0].id && issueState.busy}
+							className={`${btn} ${issueState?.id === cards[0].id && issueState.error ? 'text-red-600 dark:text-red-400' : ''}`}
+							onClick={() => {
+								const id = cards[0].id
+								setIssueState({ id, busy: true, error: '' })
+								onCreateIssue(id)
+									.then(() => setIssueState(null))
+									.catch((e: Error) => setIssueState({ id, busy: false, error: e.message }))
+							}}
+						>
+							{issueState?.id === cards[0].id && issueState.busy ? (
+								<LoaderCircle size={16} className="animate-spin" />
+							) : (
+								<Ticket size={16} />
+							)}
+							<span className="ml-1 text-xs">Jira</span>
+							<span className="sr-only">Create a Jira issue</span>
+						</button>
+					)}
+					{issueState?.error && issueState.id === cards[0]?.id && (
+						<span role="alert" className="max-w-48 truncate px-1 text-xs text-red-600 dark:text-red-400" title={issueState.error}>
+							{issueState.error}
+						</span>
+					)}
 					<Divider />
 				</>
 			)}

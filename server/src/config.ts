@@ -13,6 +13,10 @@ export interface Config {
 	notifyDelayMs?: number
 	/** Optional: lets Claude write retrospective summaries. */
 	anthropicApiKey?: string
+	/** The address people open co-bord at, for links in Jira issues and test cases; learned from requests when empty. */
+	publicUrl?: string
+	/** How often rules check SparkyTC results and Jira issues (0 turns it off, as in tests). */
+	rulePollMs?: number
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -28,5 +32,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 		maxUploadBytes: Number(env.MAX_UPLOAD_MB ?? 500) * 1024 * 1024,
 		encryptionKey: env.ENCRYPTION_KEY || undefined,
 		anthropicApiKey: env.ANTHROPIC_API_KEY || undefined,
+		publicUrl: env.PUBLIC_URL ? env.PUBLIC_URL.replace(/\/+$/, '') : undefined,
+		rulePollMs: Number(env.RULE_CHECK_SECONDS ?? 120) * 1000,
 	}
 }

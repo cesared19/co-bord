@@ -4,6 +4,7 @@ import type { Config } from './config.js'
 import type { Db } from './db.js'
 import type { SecretBox } from './crypto.js'
 import type { FileStorage } from './storage.js'
+import type { RuleEngine } from './rules.js'
 import { forbidden, unauthorized } from './errors.js'
 
 export interface Ctx {
@@ -15,6 +16,8 @@ export interface Ctx {
 	onBoardDeleted?: (boardId: string) => void
 	/** Set by the collaboration server: stores pending changes of a board now. */
 	flushBoard?: (boardId: string) => Promise<void>
+	/** Set by the collaboration server: card rules. */
+	rules?: RuleEngine
 }
 
 export async function currentUser(ctx: Ctx, req: FastifyRequest): Promise<User | null> {

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
-import { requireProjectRole } from '../access.js'
+import { atLeast, boardAccess, requireProjectRole } from '../access.js'
 import { type Ctx, requireAdmin, requireUser } from '../context.js'
-import { badRequest, HttpError } from '../errors.js'
+import { badRequest, forbidden, HttpError, notFound } from '../errors.js'
 import { sparkyConfig, sparkyRequest, validUrl } from '../sparkytc.js'
 import { asBody, intParam, isUuid, str } from '../validate.js'
 
@@ -137,5 +137,74 @@ export function sparkyRoutes(app: FastifyInstance, ctx: Ctx) {
 		}
 		const key = `${projectId}:results:${JSON.stringify(request)}`
 		return cached(key, () => sparkyRequest(config, '/results', request))
+	})
+
+	/**
+	 * Creates test cases from the paths of a flow, in one section, and a plan with that section. SparkyTC returns
+	 * what already exists for the same source references, so generating again only adds the new paths.
+	 */
+	app.post<{ Params: { id: string } }>('/api/boards/:id/sparkytc/generate', async (req) => {
+		const user = await requireUser(ctx, req)
+		if (!isUuid(req.params.id)) throw notFound('Board not found')
+		const access = await boardAccess(db, user, req.params.id)
+		if (!atLeast(access.role, 'editor')) throw forbidden()
+		const config = await connection(access.projectId)
+		const body = asBody(req.body)
+		const sectionPath = str(body, 'sectionPath', { min: 1, max: 500 })
+		const planName = str(body, 'planName', { max: 200, optional: true })
+		const planSourceRef = str(body, 'planSourceRef', { max: 200, optional: true })
+		const rawCases = body.cases
+		if (!Array.isArray(rawCases) || !rawCases.length) throw badRequest('There are no paths to create tests from')
+		if (rawCases.length > 100) throw badRequest('At most 100 test cases at a time')
+		const cases = rawCases.map((raw) => {
+			const c = asBody(raw)
+			const steps = c.steps
+			if (!Array.isArray(steps) || steps.length > 200) throw badRequest('steps must be a list')
+			return {
+				title: str(c, 'title', { min: 1, max: 500 }),
+				description: str(c, 'description', { max: 5000, optional: true }),
+				sourceRef: str(c, 'sourceRef', { min: 1, max: 200 }),
+				steps: steps.map((st) => {
+					const step = asBody(st)
+					return {
+						action: str(step, 'action', { min: 1, max: 2000 }),
+						expected: str(step, 'expected', { max: 2000, optional: true }) ?? '',
+					}
+				}),
+			}
+		})
+		const section = await sparkyRequest<{ sectionID: string; path: string; webPath: string }>(config, '/sections', { path: sectionPath })
+		const created: { sourceRef: string; testCaseNumber: number; title: string; created: boolean; webPath: string }[] = []
+		for (const c of cases) {
+			const r = await sparkyRequest<{ testCaseNumber: number; title: string; created?: boolean; webPath: string }>(config, '/test-cases', {
+				title: c.title,
+				...(c.description ? { description: c.description } : {}),
+				sectionPath: section.path,
+				format: c.steps.length ? 'STEPS' : 'TEXT',
+				steps: c.steps.map((s) => (s.expected ? s : { action: s.action })),
+				sourceRef: c.sourceRef,
+			})
+			created.push({
+				sourceRef: c.sourceRef,
+				testCaseNumber: r.testCaseNumber,
+				title: r.title,
+				created: r.created !== false,
+				webPath: r.webPath,
+			})
+		}
+		let plan: { testPlanID: string; name: string; created?: boolean; webPath: string } | null = null
+		if (planName)
+			plan = await sparkyRequest(config, '/test-plans', {
+				name: planName,
+				description: 'Created by co-bord from the paths of a flow.',
+				sectionIDs: [section.sectionID],
+				...(planSourceRef ? { sourceRef: planSourceRef } : {}),
+			})
+		for (const key of cache.keys()) if (key.startsWith(`${access.projectId}:`)) cache.delete(key)
+		return {
+			section: { id: section.sectionID, path: section.path, webPath: section.webPath },
+			cases: created,
+			plan: plan && { id: plan.testPlanID, name: plan.name, created: plan.created !== false, webPath: plan.webPath },
+		}
 	})
 }

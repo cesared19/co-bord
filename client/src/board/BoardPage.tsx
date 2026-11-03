@@ -10,7 +10,7 @@ import { useIsDark } from '../lib/theme'
 import { Canvas } from './Canvas'
 import { download, renderPng } from './exportPng'
 import { PresenceAvatars } from './Presence'
-import { BoardEnvContext, useConfluenceInfo } from './confluence'
+import { BoardEnvContext, useConfluenceInfo, useJiraInfo } from './confluence'
 import { FollowBoardButton, useFollows } from './follows'
 import type { Member } from '../lib/api'
 import { useSparkyInfo } from './sparky'
@@ -73,6 +73,7 @@ function BoardSession({
 	const { elements, peers, status, synced } = useBoardDoc(connection, user, readOnly)
 	const sparky = useSparkyInfo(board.projectId)
 	const confluence = useConfluenceInfo(board.projectId)
+	const jira = useJiraInfo(board.projectId)
 	const follows = useFollows(board.id)
 	const [members, setMembers] = useState<Member[]>([])
 	useEffect(() => {
@@ -80,7 +81,7 @@ function BoardSession({
 			.then((r) => setMembers(r.members))
 			.catch(() => {})
 	}, [board.projectId])
-	const env = useMemo(() => ({ projectId: board.projectId, confluence, members }), [board.projectId, confluence, members])
+	const env = useMemo(() => ({ projectId: board.projectId, confluence, jira, members }), [board.projectId, confluence, jira, members])
 	// a notification can point at one element: show it once the board is there
 	const [params] = useSearchParams()
 	const focusId = params.get('el')

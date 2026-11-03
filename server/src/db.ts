@@ -145,6 +145,56 @@ const migrations: { version: string; sql: string }[] = [
 			ALTER TABLE users ADD COLUMN notify_rules BOOLEAN NOT NULL DEFAULT TRUE;
 		`,
 	},
+	{
+		version: '0.0.6',
+		sql: `
+			-- Jira Cloud for a project: site, account, API token (encrypted), and where issues go
+			ALTER TABLE projects ADD COLUMN jira_url TEXT;
+			ALTER TABLE projects ADD COLUMN jira_email TEXT;
+			ALTER TABLE projects ADD COLUMN jira_token TEXT;
+			ALTER TABLE projects ADD COLUMN jira_project_key TEXT;
+			ALTER TABLE projects ADD COLUMN jira_issue_type TEXT;
+
+			-- card rules of a board: a trigger and the actions it runs
+			CREATE TABLE board_rules (
+				id SERIAL PRIMARY KEY,
+				board_id UUID NOT NULL REFERENCES boards (id) ON DELETE CASCADE,
+				name TEXT NOT NULL,
+				enabled BOOLEAN NOT NULL DEFAULT TRUE,
+				trigger JSONB NOT NULL,
+				actions JSONB NOT NULL,
+				-- what the rule last saw, like the test results of linked elements
+				state JSONB NOT NULL DEFAULT '{}',
+				created_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+				updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+			);
+			CREATE INDEX board_rules_board_idx ON board_rules (board_id);
+
+			CREATE TABLE rule_runs (
+				id SERIAL PRIMARY KEY,
+				rule_id INTEGER NOT NULL REFERENCES board_rules (id) ON DELETE CASCADE,
+				element_id TEXT,
+				element_text TEXT NOT NULL DEFAULT '',
+				ok BOOLEAN NOT NULL,
+				details JSONB NOT NULL DEFAULT '[]',
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+			);
+			CREATE INDEX rule_runs_rule_idx ON rule_runs (rule_id, created_at DESC);
+
+			-- Jira issues created for board elements, checked now and then to mark the element done
+			CREATE TABLE jira_links (
+				board_id UUID NOT NULL REFERENCES boards (id) ON DELETE CASCADE,
+				element_id TEXT NOT NULL,
+				issue_key TEXT NOT NULL,
+				status TEXT NOT NULL DEFAULT '',
+				category TEXT NOT NULL DEFAULT '',
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+				checked_at TIMESTAMPTZ,
+				PRIMARY KEY (board_id, element_id)
+			);
+		`,
+	},
 ]
 
 export async function migrate(db: Db): Promise<void> {

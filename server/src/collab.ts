@@ -6,6 +6,7 @@ import { atLeast, boardAccess, type Role } from './access.js'
 import { cookieFromHeader, SESSION_COOKIE, type User, userForToken } from './auth.js'
 import type { Ctx } from './context.js'
 import { BoardWatcher } from './notify.js'
+import { type BoardEditor, RuleEngine } from './rules.js'
 import { isUuid } from './validate.js'
 
 export interface CollabContext {
@@ -21,6 +22,7 @@ export function createCollab(ctx: Ctx) {
 	const { db } = ctx
 
 	const watcher = new BoardWatcher(db, ctx.config.notifyDelayMs ?? 3000)
+	let rules: RuleEngine | null = null
 
 	const hocuspocus = new Hocuspocus<CollabContext>({
 		quiet: true,
@@ -43,11 +45,13 @@ export function createCollab(ctx: Ctx) {
 			const { rows } = await db.query<{ document: Buffer | null }>('SELECT document FROM boards WHERE id = $1', [documentName])
 			if (rows[0]?.document) Y.applyUpdate(document, new Uint8Array(rows[0].document))
 			watcher.loaded(documentName, document)
+			rules?.loaded(documentName, document)
 			return document
 		},
 
 		async afterUnloadDocument({ documentName }) {
 			await watcher.unloaded(documentName)
+			await rules?.unloaded(documentName)
 		},
 
 		async onStoreDocument({ documentName, document, lastContext }) {
@@ -63,6 +67,30 @@ export function createCollab(ctx: Ctx) {
 			userId,
 		])
 	}
+
+	/** Rules change boards through direct connections, so everyone sees the change and it's saved like any other. */
+	const editor: BoardEditor = {
+		async edit(boardId, depth, change) {
+			const connection = await hocuspocus.openDirectConnection(boardId, { ruleDepth: depth } as unknown as CollabContext)
+			try {
+				await connection.transact((doc) => change(doc.getMap('elements')))
+			} finally {
+				await connection.disconnect()
+			}
+		},
+		async snapshot(boardId) {
+			const live = hocuspocus.documents.get(boardId)
+			if (live) return live
+			const { rows } = await db.query<{ document: Buffer | null }>('SELECT document FROM boards WHERE id = $1', [boardId])
+			if (!rows[0]) return null
+			const doc = new Y.Doc()
+			if (rows[0].document) Y.applyUpdate(doc, new Uint8Array(rows[0].document))
+			return doc
+		},
+	}
+	rules = new RuleEngine(ctx, editor, ctx.config.notifyDelayMs ?? 3000)
+	rules.start(ctx.config.rulePollMs ?? 120_000)
+	ctx.rules = rules
 
 	ctx.onBoardDeleted = (boardId) => hocuspocus.closeConnections(boardId)
 	ctx.flushBoard = async (boardId) => {
@@ -89,10 +117,11 @@ export function createCollab(ctx: Ctx) {
 
 	async function close() {
 		await watcher.flushAll()
+		await rules?.stop()
 		hocuspocus.flushPendingStores()
 		await Promise.all([...hocuspocus.documents.values()].map((d) => save(d.name, d, null).catch(() => {})))
 		hocuspocus.closeConnections()
 	}
 
-	return { hocuspocus, handle, close, watcher }
+	return { hocuspocus, handle, close, watcher, rules }
 }
