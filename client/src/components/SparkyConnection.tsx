@@ -71,7 +71,15 @@ export function SparkyConnection({ projectId }: { projectId: number }) {
 							{info.project?.currentBuild && <span className="text-gray-500">· current build {info.project.currentBuild.buildNumber}</span>}
 						</p>
 					)}
-					<p className="mt-1 text-xs text-gray-500">Links open at {info.publicUrl}</p>
+					<p className="mt-1 text-xs text-gray-500">
+						Links open at {info.publicUrl}
+						{info.project && (info.project.permissions?.includes('write') ? ' · Read and write token' : ' · Read-only token')}
+					</p>
+					{info.project && !info.project.permissions?.includes('write') && (
+						<p className="mt-1 text-xs text-gray-500">
+							To generate tests from flows and let rules create test cases, connect a Read and write token (SparkyTC 2.3.0 or later).
+						</p>
+					)}
 					{user.isAdmin && (
 						<div className="mt-3 flex gap-2">
 							<Button variant="secondary" onClick={() => setEditing(true)}>
@@ -118,7 +126,7 @@ export function SparkyConnection({ projectId }: { projectId: number }) {
 						autoComplete="off"
 						required={!info.connected}
 						placeholder={info.connected ? 'Leave empty to keep the current token' : 'stc_...'}
-						hint="Created by a SparkyTC admin in the project's Settings, under API tokens. It's stored encrypted and only reads."
+						hint="Created by a SparkyTC admin in the project's Settings, under API tokens. It's stored encrypted. A Read token shows results; a Read and write token also lets co-bord create test cases."
 					/>
 					<ErrorText>{error}</ErrorText>
 					<div className="flex gap-2">

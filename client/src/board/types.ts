@@ -30,6 +30,18 @@ interface Box {
 	links?: SparkyLink[]
 	/** Marks elements co-bord adds and may replace, like the headings of grouped retro notes. */
 	tag?: string
+	/** Done: shown with a check and struck-through text. Set by people, rules, or when the linked Jira issue closes. */
+	done?: boolean
+	/** The Jira issue created for this card, with its status as last checked. */
+	issue?: JiraIssue
+}
+
+export interface JiraIssue {
+	key: string
+	url: string
+	status: string
+	/** Jira's status category: new, indeterminate or done. */
+	category: string
 }
 
 export interface TextStyle {

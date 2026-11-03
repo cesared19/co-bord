@@ -14,7 +14,15 @@ export interface SparkyInfo {
 	publicUrl?: string
 	url?: string
 	error?: string
-	project?: { projectShortCode: string; title: string; currentBuild: SparkyBuild | null; builds: SparkyBuild[]; webPath: string }
+	project?: {
+		projectShortCode: string
+		title: string
+		currentBuild: SparkyBuild | null
+		builds: SparkyBuild[]
+		webPath: string
+		/** What the token can do: read, and write from SparkyTC 2.3.0. */
+		permissions?: string[]
+	}
 }
 
 interface Counts {
@@ -172,3 +180,6 @@ export function elementStatus(links: SparkyLink[] | undefined, results: Map<stri
 
 export const sparkyHref = (info: SparkyInfo | null, webPath: string) =>
 	info?.publicUrl && webPath ? `${info.publicUrl.replace(/\/+$/, '')}${webPath}` : undefined
+
+/** The token can create test cases (SparkyTC 2.3.0 or later, Read and write token). */
+export const canWriteSparky = (info: SparkyInfo | null) => !!info?.project?.permissions?.includes('write')

@@ -37,6 +37,7 @@ export const BoxView = memo(function BoxView({ el, dark, editing, onText, onEdit
 		textAlign: el.align,
 		whiteSpace: 'pre-wrap',
 		overflowWrap: 'break-word',
+		...(el.done ? { textDecoration: 'line-through', opacity: 0.6 } : {}),
 	}
 	const box: React.CSSProperties = {
 		position: 'absolute',
@@ -89,6 +90,20 @@ export const BoxView = memo(function BoxView({ el, dark, editing, onText, onEdit
 						<div style={{ ...textStyle, width: '100%', maxHeight: el.type === 'text' ? undefined : '100%' }}>{withMentions(el.text)}</div>
 					</div>
 				)
+			)}
+			{el.done && (
+				<svg
+					width={22}
+					height={22}
+					viewBox="0 0 22 22"
+					style={{ position: 'absolute', left: -8, top: -8 }}
+					role="img"
+					aria-label="Done"
+					pointerEvents="none"
+				>
+					<circle cx={11} cy={11} r={10} fill="#16a34a" stroke="#fff" strokeWidth={2} />
+					<path d="M6.5 11.5l3 3 6-6.5" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+				</svg>
 			)}
 		</div>
 	)

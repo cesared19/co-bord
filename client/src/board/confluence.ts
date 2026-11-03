@@ -43,15 +43,38 @@ export function useConfluenceInfo(projectId: number) {
 	return info
 }
 
+export interface JiraInfo {
+	connected: boolean
+	url?: string
+	email?: string
+	projectKey?: string
+	issueType?: string
+}
+
+export function useJiraInfo(projectId: number) {
+	const [info, setInfo] = useState<JiraInfo | null>(null)
+	useEffect(() => {
+		let cancelled = false
+		api<JiraInfo>(`/api/projects/${projectId}/jira`)
+			.then((r) => !cancelled && setInfo(r))
+			.catch(() => !cancelled && setInfo({ connected: false }))
+		return () => {
+			cancelled = true
+		}
+	}, [projectId])
+	return info
+}
+
 /** What blocks need to know about the board's project. */
 export interface BoardEnv {
 	projectId: number
 	confluence: ConfluenceInfo | null
+	jira: JiraInfo | null
 	/** The project's members, to @mention them. */
 	members: Member[]
 }
 
-export const BoardEnvContext = createContext<BoardEnv>({ projectId: 0, confluence: null, members: [] })
+export const BoardEnvContext = createContext<BoardEnv>({ projectId: 0, confluence: null, jira: null, members: [] })
 export const useBoardEnv = () => useContext(BoardEnvContext)
 
 /** The page id when `raw` is a page of the connected Confluence site. */

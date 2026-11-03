@@ -288,7 +288,7 @@ export function LinksPopover({
 }
 
 /** Steps that count for coverage: shapes and sticky notes with text. */
-const isStep = (el: BoardElement): el is TextBox => (el.type === 'shape' || el.type === 'sticky') && el.text.trim().length > 0
+export const isStep = (el: BoardElement): el is TextBox => (el.type === 'shape' || el.type === 'sticky') && el.text.trim().length > 0
 
 /** Reading order: rows from top to bottom (by center), left to right in a row. */
 const readingKey = (el: TextBox) => [Math.round((el.y + el.h / 2) / 60), el.x + el.w / 2] as const
@@ -390,6 +390,7 @@ export function CoveragePanel({
 	elements,
 	boardName,
 	onShow,
+	onGenerate,
 	onClose,
 }: {
 	projectId: number
@@ -397,6 +398,8 @@ export function CoveragePanel({
 	elements: ElementMap
 	boardName: string
 	onShow: (id: string) => void
+	/** Opens the generate tests dialog for the board or a frame, for editors. */
+	onGenerate?: (frameId: string | null) => void
 	onClose: () => void
 }) {
 	const frames = useMemo(
@@ -561,12 +564,22 @@ export function CoveragePanel({
 					</ol>
 				)}
 			</div>
-			<div className="border-t border-gray-200 p-3 dark:border-gray-700">
+			<div className="flex gap-2 border-t border-gray-200 p-3 dark:border-gray-700">
+				{onGenerate && (
+					<button
+						type="button"
+						onClick={() => onGenerate(scopeFrame?.id ?? null)}
+						disabled={!steps.length}
+						className="flex-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+					>
+						Generate tests
+					</button>
+				)}
 				<button
 					type="button"
 					onClick={downloadCsv}
 					disabled={!steps.length}
-					className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:hover:bg-gray-800"
+					className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:hover:bg-gray-800"
 				>
 					Download CSV
 				</button>

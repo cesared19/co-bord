@@ -4,10 +4,13 @@ import { BoxView, ConnectorView, FrameView } from './ElementView'
 import { FacilitationMenu, TimerPill, VoteBadges, VoteRanking, VotingBanner } from './Facilitation'
 import { useServerClock, useSession } from './session'
 import { TemplatePicker } from './TemplatePicker'
-import { boardLinks, type SparkyInfo, useLinkResults } from './sparky'
+import { boardLinks, canWriteSparky, type SparkyInfo, useLinkResults } from './sparky'
 import { CoveragePanel, LinkBadges, LinkEditor, LinksPopover } from './SparkyLinks'
-import { BookOpenText, FlaskConical } from 'lucide-react'
-import { type ConfluenceInfo, confluencePageId, searchConfluence } from './confluence'
+import { BookOpenText, FlaskConical, Zap } from 'lucide-react'
+import { GenerateTestsDialog } from './GenerateTestsDialog'
+import { IssueBadges } from './IssueBadges'
+import { RulesPanel } from './RulesPanel'
+import { type ConfluenceInfo, confluencePageId, searchConfluence, useBoardEnv } from './confluence'
 import { PublishDialog } from './PublishDialog'
 import { RetroPanel } from './RetroPanel'
 import type { SummarySection } from './retro'
@@ -227,10 +230,14 @@ export function Canvas({
 	const allLinks = useMemo(() => boardLinks(elements.values()), [elements])
 	const linkResults = useLinkResults(projectId, allLinks, sparkyReady)
 	const [openLinks, setOpenLinks] = useState<string | null>(null)
-	const [panel, setPanel] = useState<'coverage' | 'retro' | null>(null)
+	const [panel, setPanel] = useState<'coverage' | 'retro' | 'rules' | null>(null)
 	const showCoverage = panel === 'coverage'
 	const setShowCoverage = (on: boolean) => setPanel(on ? 'coverage' : null)
 	const openPanel = (which: 'coverage' | 'retro') => setPanel(which)
+	/** The generate tests dialog, for the whole board ('') or a frame. */
+	const [generating, setGenerating] = useState<string | null>(null)
+	const { jira } = useBoardEnv()
+	const jiraReady = !!jira?.connected
 	/** The retrospective summary to publish with the page, when publishing from the retro panel. */
 	const [publishSummary, setPublishSummary] = useState<SummarySection[] | null>(null)
 	const confluenceReady = !!confluence?.connected && !confluence.error
@@ -1277,6 +1284,7 @@ export function Canvas({
 							onClose={() => setOpenLinks(null)}
 						/>
 					)}
+					<IssueBadges elements={elements} camera={camera} />
 					<RemoteCursors peers={peers} camera={camera} />
 				</div>
 			</div>
@@ -1343,8 +1351,15 @@ export function Canvas({
 					)}
 				</div>
 			)}
-			{!panel && (sparkyReady || (confluenceReady && !readOnly)) && (
+			{!panel && (
 				<div data-ui className="absolute top-3 right-3 z-10 flex gap-2">
+					<button
+						type="button"
+						onClick={() => setPanel('rules')}
+						className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+					>
+						<Zap size={16} /> Rules
+					</button>
 					{confluenceReady && !readOnly && (
 						<button
 							type="button"
@@ -1364,6 +1379,30 @@ export function Canvas({
 						</button>
 					)}
 				</div>
+			)}
+			{panel === 'rules' && (
+				<RulesPanel
+					boardId={boardId}
+					elements={elements}
+					readOnly={readOnly}
+					sparky={{ connected: sparkyReady, canWrite: canWriteSparky(sparky) }}
+					onShow={(id) => {
+						setSelection([id])
+						fit([id])
+					}}
+					onClose={() => setPanel(null)}
+				/>
+			)}
+			{generating !== null && sparky && (
+				<GenerateTestsDialog
+					boardId={boardId}
+					boardName={boardName}
+					elements={elements}
+					store={store}
+					info={sparky}
+					initialFrameId={generating || null}
+					onClose={() => setGenerating(null)}
+				/>
 			)}
 			{panel === 'retro' && (
 				<RetroPanel
@@ -1407,6 +1446,7 @@ export function Canvas({
 					info={sparky!}
 					elements={elements}
 					boardName={boardName}
+					onGenerate={readOnly ? undefined : (frameId) => setGenerating(frameId ?? '')}
 					onClose={() => setShowCoverage(false)}
 					onShow={(id) => {
 						setSelection([id])
@@ -1495,6 +1535,12 @@ export function Canvas({
 					onWrapInFrame={wrapInFrame}
 					onExportFrame={exportFrame}
 					onPublishFrame={confluenceReady ? (id) => setPublishing(id) : undefined}
+					onGenerateTests={sparkyReady ? (id) => setGenerating(id) : undefined}
+					onCreateIssue={
+						jiraReady
+							? (id) => api(`/api/boards/${boardId}/elements/${encodeURIComponent(id)}/jira`, { method: 'POST' }).then(() => undefined)
+							: undefined
+					}
 					following={single ? follows.elements.has(single.id) : false}
 					onToggleFollow={single && single.type !== 'connector' ? () => follows.toggleElement(single.id) : undefined}
 					linkEditor={

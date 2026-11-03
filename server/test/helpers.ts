@@ -5,10 +5,12 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import type { RetroWriter } from '../src/ai.js'
 import { buildApp } from '../src/app.js'
+import type { Ctx } from '../src/context.js'
 import { createDb, type Db, migrate } from '../src/db.js'
 
 export interface TestEnv {
 	app: FastifyInstance
+	ctx: Ctx
 	db: Db
 	url: string
 	stop: () => Promise<void>
@@ -21,7 +23,7 @@ export async function startEnv(opts: { retroWriter?: RetroWriter } = {}): Promis
 	const db = createDb(container.getConnectionUri())
 	await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public')
 	await migrate(db)
-	const { app } = await buildApp(
+	const { app, ctx } = await buildApp(
 		{
 			port: 0,
 			databaseUrl: container.getConnectionUri(),
@@ -31,6 +33,7 @@ export async function startEnv(opts: { retroWriter?: RetroWriter } = {}): Promis
 			dataDir: mkdtempSync(join(tmpdir(), 'cobord-')),
 			maxUploadBytes: 1024 * 1024,
 			notifyDelayMs: 100,
+			rulePollMs: 0,
 		},
 		db,
 		opts,
@@ -38,6 +41,7 @@ export async function startEnv(opts: { retroWriter?: RetroWriter } = {}): Promis
 	const url = await app.listen({ port: 0, host: '127.0.0.1' })
 	return {
 		app,
+		ctx,
 		db,
 		url,
 		stop: async () => {

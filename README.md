@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.6.0)
+## Features (0.7.0)
 
 ### Boards
 
@@ -40,11 +40,12 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ### Test coverage with SparkyTC
 
--  An admin connects a project to a SparkyTC project (2.2.0 or later) in the project's **Settings**, with a project API token created in SparkyTC (its **Settings**, **API tokens**). The token is stored encrypted and only reads.
+-  An admin connects a project to a SparkyTC project (2.2.0 or later) in the project's **Settings**, with a project API token created in SparkyTC (its **Settings**, **API tokens**). The token is stored encrypted. A **Read** token shows results; a **Read and write** token (SparkyTC 2.3.0 or later) also lets co-bord create test cases.
 -  Select a shape, sticky note, frame or media block and link it to the SparkyTC **test cases**, **suites or sections** and **test plans** that test it (the flask button in the toolbar above the selection).
 -  Linked elements show a chip with the combined result of their tests in the current build: failed, blocked, not run, skipped or passed, worst first. Click it for each test's result, who ran it, and a link to it in SparkyTC.
 -  **Coverage** (top right of the board) treats the shapes and sticky notes with text as the steps of a flow, in the whole board or one frame: the share of steps with linked tests, how they did in a build you choose, and every step in the order of the flow. Click a step to see it on the board, or download the report as CSV.
 -  Results refresh every minute.
+-  **Generate tests** (in the coverage panel, or the button of a selected frame) creates one SparkyTC test case per path through the flow, following the connectors from where it starts to where it ends (decision labels like Yes / No are part of the step). Each step is an action and the next step is what should happen. The test cases go in a section (created if missing), with a test plan for the section, and each step is linked to the test cases that go through it. Generating again only adds the new paths.
 
 ### Confluence
 
@@ -57,6 +58,17 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 -  The **bell** in the header lists what concerns you, checked every 30 seconds: **mentions** (`@username` in a sticky note, shape, text, label or frame title; typing `@` suggests the project's members) and changes to what you **follow**: a whole board (**Follow** in the board's header) or one item (the bell in the toolbar above a selection). Changes to the same thing are grouped while unread.
 -  Clicking a notification opens the board on that item. **Mark all read** and **Clear read** keep the list short, and **Account** chooses which notifications you get.
+
+### Card rules
+
+-  **Rules** (top right of a board) act on cards, the sticky notes and shapes with text, when a card **enters a frame**, **gets N votes** in the current round, or a **linked test starts failing** in SparkyTC (checked every two minutes).
+-  Actions: **create a Jira issue** linked to the card, **change the card** (color, move it to a frame, mark it done), **notify** people in the app, and **create a SparkyTC test case** from it (once per card, linked to it).
+-  Rules can be paused, and each one shows what it did and any errors. Everyone sees them; editors create and change them.
+-  Cards with a Jira issue show its key and status, and are **marked done** (a check and struck-through text) when the issue is closed in Jira; a selected card can also be marked done, or get a Jira issue, from the toolbar above it.
+
+### Jira
+
+-  An admin connects a project to Jira Cloud in the project's **Settings**: the site, an Atlassian account's email and API token (stored encrypted), and the Jira project and issue type for new issues. When Jira is on the same site as the connected Confluence, **Use the Confluence account** reuses it.
 
 ### Guided retrospectives
 
@@ -97,7 +109,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 3. ~~Embedded images, videos (YouTube, Google Drive, Vimeo, uploaded) and PDFs as resizable blocks that play and page inside the board~~ (0.2.0)
 4. ~~Templates: retrospectives (columns, votes, timer), workflows and design documents; frames~~ (0.3.0)
 5. ~~Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage~~ (0.4.0); ~~Confluence pages embedded as blocks, and boards published to Confluence~~ (0.5.0)
-6. Automations: ~~guided retrospectives and notifications~~ (0.6.0); card rules (for example, create a Jira issue when a note moves to a column) and generating SparkyTC test cases from a flow
+6. ~~Automations: guided retrospectives and notifications~~ (0.6.0); ~~card rules and generating SparkyTC test cases from a flow~~ (0.7.0)
 
 ## Running it
 
@@ -123,6 +135,8 @@ co-bord is served on port 3200 (`APP_PORT`). Open it and create the admin accoun
 | `SESSION_DAYS` | How long a sign-in lasts, 7 days by default |
 | `MAX_UPLOAD_MB` | Largest file that can be uploaded, 500 MB by default |
 | `ANTHROPIC_API_KEY` | Optional: lets Claude (Claude Opus 5.5) write retrospective summaries |
+| `PUBLIC_URL` | Optional: the address people open co-bord at, for links in Jira issues and test cases (otherwise taken from requests) |
+| `RULE_CHECK_SECONDS` | How often rules check SparkyTC results and Jira issues, 120 by default |
 | `ENCRYPTION_KEY` | Encrypts the credentials of integrations. When empty, a key is created in the `app-data` volume; keep a copy of it, or set your own |
 
 Uploaded files are kept in the `app-data` volume and the database in `db-data`; back up both.

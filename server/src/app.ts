@@ -22,6 +22,8 @@ import { confluenceRoutes } from './routes/confluence.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { retroRoutes } from './routes/retro.js'
 import { RetroWriter } from './ai.js'
+import { jiraRoutes } from './routes/jira.js'
+import { ruleRoutes } from './routes/rules.js'
 
 export async function buildApp(config: Config, db: Db, opts: { logger?: boolean; retroWriter?: RetroWriter } = {}) {
 	const app = Fastify({ logger: opts.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024 })
@@ -51,10 +53,20 @@ export async function buildApp(config: Config, db: Db, opts: { logger?: boolean;
 	confluenceRoutes(app, ctx)
 	notificationRoutes(app, ctx)
 	retroRoutes(app, ctx, opts.retroWriter ?? new RetroWriter(config.anthropicApiKey))
+	jiraRoutes(app, ctx)
+	ruleRoutes(app, ctx)
 
 	const collab = createCollab(ctx)
 	app.get('/collab', { websocket: true }, (socket, req) => collab.handle(socket, req.raw))
 	app.addHook('onClose', async () => collab.close())
+	// links in Jira issues and test cases need the address people use, when PUBLIC_URL isn't set
+	app.addHook('onRequest', async (req) => {
+		const rules = collab.rules
+		if (rules && !rules.baseUrl && req.url.startsWith('/api/') && req.headers.host) {
+			const proto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0] ?? 'http'
+			rules.baseUrl = `${proto}://${req.headers.host}`
+		}
+	})
 
 	// `now` lets clients line up their clock with the server's for the shared timer
 	app.get('/api/health', async () => ({ ok: true, now: Date.now() }))

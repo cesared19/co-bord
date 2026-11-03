@@ -35,6 +35,8 @@ export async function sparkyRequest<T>(config: Pick<SparkyConfig, 'url' | 'token
 	}
 	const data = (await res.json().catch(() => null)) as { data?: T; message?: string } | null
 	if (res.status === 401) throw new HttpError(502, 'SparkyTC rejected the token. Create a new one in the project settings of SparkyTC.')
+	if (res.status === 403 && body !== undefined && path !== '/results')
+		throw new HttpError(502, 'The SparkyTC token can only read. An admin can connect a Read and write token in the project settings.')
 	if (!res.ok) throw new HttpError(502, `SparkyTC: ${data?.message ?? `error ${res.status}`}`)
 	if (!data || !('data' in data)) throw new HttpError(502, `${config.url} doesn't look like SparkyTC 2.2.0 or later`)
 	return data.data as T
