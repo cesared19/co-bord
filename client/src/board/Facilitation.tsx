@@ -1,4 +1,4 @@
-import { Minus, Pause, Play, Square, Timer, Vote } from 'lucide-react'
+import { Minus, Pause, Play, Square, StickyNote, Timer, Vote } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { elementBounds, type ElementMap, toScreen } from './geometry'
 import { chime, serverNow, type Session, type SessionSnapshot } from './session'
@@ -19,7 +19,18 @@ function remainingOf(timer: SessionSnapshot['timer']) {
 }
 
 /** The toolbar popover where an editor starts the timer and the voting. */
-export function FacilitationMenu({ session, state, userName }: { session: Session; state: SessionSnapshot; userName: string }) {
+export function FacilitationMenu({
+	session,
+	state,
+	userName,
+	onRetro,
+}: {
+	session: Session
+	state: SessionSnapshot
+	userName: string
+	/** Opens the retrospective panel: grouping and summary. */
+	onRetro: () => void
+}) {
 	const [minutes, setMinutes] = useState('5')
 	const [votes, setVotes] = useState('5')
 	const { timer, voting } = state
@@ -124,6 +135,11 @@ export function FacilitationMenu({ session, state, userName }: { session: Sessio
 					</form>
 				)}
 			</section>
+			<section className="border-t border-gray-200 pt-3 dark:border-gray-700">
+				<button type="button" onClick={onRetro} className={smallBtn}>
+					<StickyNote size={14} /> Group notes and summarize…
+				</button>
+			</section>
 		</div>
 	)
 }
@@ -220,11 +236,13 @@ export function VotingBanner({
 	state,
 	canControl,
 	onResults,
+	onSummary,
 }: {
 	session: Session
 	state: SessionSnapshot
 	canControl: boolean
 	onResults: () => void
+	onSummary: () => void
 }) {
 	const v = state.voting
 	if (!v) return null
@@ -258,6 +276,9 @@ export function VotingBanner({
 			</span>
 			<button type="button" onClick={onResults} className={smallBtn}>
 				Ranking
+			</button>
+			<button type="button" onClick={onSummary} className={smallBtn}>
+				Summary
 			</button>
 			{canControl && (
 				<button type="button" onClick={() => session.clearVoting()} className={smallBtn}>

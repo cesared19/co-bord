@@ -9,6 +9,10 @@ export interface Config {
 	maxUploadBytes: number
 	/** Key for the credentials of integrations; generated in DATA_DIR when missing. */
 	encryptionKey?: string
+	/** How long edits settle before notifications go out (shorter in tests). */
+	notifyDelayMs?: number
+	/** Optional: lets Claude write retrospective summaries. */
+	anthropicApiKey?: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -23,5 +27,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 		dataDir: env.DATA_DIR ?? './data',
 		maxUploadBytes: Number(env.MAX_UPLOAD_MB ?? 500) * 1024 * 1024,
 		encryptionKey: env.ENCRYPTION_KEY || undefined,
+		anthropicApiKey: env.ANTHROPIC_API_KEY || undefined,
 	}
 }

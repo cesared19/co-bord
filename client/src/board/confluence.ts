@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { api, type Member } from '../lib/api'
 
 export interface ConfluenceInfo {
 	connected: boolean
@@ -47,9 +47,11 @@ export function useConfluenceInfo(projectId: number) {
 export interface BoardEnv {
 	projectId: number
 	confluence: ConfluenceInfo | null
+	/** The project's members, to @mention them. */
+	members: Member[]
 }
 
-export const BoardEnvContext = createContext<BoardEnv>({ projectId: 0, confluence: null })
+export const BoardEnvContext = createContext<BoardEnv>({ projectId: 0, confluence: null, members: [] })
 export const useBoardEnv = () => useContext(BoardEnvContext)
 
 /** The page id when `raw` is a page of the connected Confluence site. */

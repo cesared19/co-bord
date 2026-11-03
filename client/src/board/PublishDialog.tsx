@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import type { ConfluenceInfo, Publication } from './confluence'
 import { renderPng } from './exportPng'
 import { type ElementMap, withFrameContents } from './geometry'
+import type { SummarySection } from './retro'
 import { useCoverage } from './SparkyLinks'
 
 /**
@@ -19,6 +20,7 @@ export function PublishDialog({
 	confluence,
 	withCoverage,
 	initialFrameId,
+	summary,
 	onClose,
 }: {
 	boardId: string
@@ -29,6 +31,8 @@ export function PublishDialog({
 	/** The project is connected to SparkyTC. */
 	withCoverage: boolean
 	initialFrameId: string | null
+	/** A retrospective summary to add to the page. */
+	summary?: SummarySection[] | null
 	onClose: () => void
 }) {
 	const frames = useMemo(
@@ -39,7 +43,8 @@ export function PublishDialog({
 	const frame = frames.find((f) => f.id === scope)
 	const scopeName = frame?.type === 'frame' ? frame.title || 'Frame' : boardName
 	const [title, setTitle] = useState(scopeName)
-	const [includeCoverage, setIncludeCoverage] = useState(withCoverage)
+	const [includeCoverage, setIncludeCoverage] = useState(withCoverage && !summary)
+	const [includeSummary, setIncludeSummary] = useState(!!summary)
 	const [publications, setPublications] = useState<Publication[]>([])
 	const [update, setUpdate] = useState(true)
 	const [busy, setBusy] = useState(false)
@@ -75,6 +80,7 @@ export function PublishDialog({
 					boardUrl: `${window.location.origin}/boards/${boardId}`,
 					update: !!previous && update,
 					coverage: withCoverage && includeCoverage ? coverage.report() : undefined,
+					summary: summary && includeSummary ? { sections: summary } : undefined,
 				}),
 			)
 			if (image) form.append('image', image, 'board.png')
@@ -152,6 +158,20 @@ export function PublishDialog({
 									{new Date(previous.publishedAt).toLocaleString()}
 									{previous.publishedBy ? ` by ${previous.publishedBy}` : ''}. Otherwise a new page is created.
 								</span>
+							</span>
+						</label>
+					)}
+					{summary && (
+						<label className="flex items-start gap-2">
+							<input
+								type="checkbox"
+								checked={includeSummary}
+								onChange={(e) => setIncludeSummary(e.target.checked)}
+								className="mt-0.5 accent-brand-600"
+							/>
+							<span>
+								Include the retrospective summary
+								<span className="block text-xs text-gray-500">{summary.length} sections</span>
 							</span>
 						</label>
 					)}

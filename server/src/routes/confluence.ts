@@ -47,6 +47,10 @@ const lozenge = (title: string) =>
 	`<ac:structured-macro ac:name="status"><ac:parameter ac:name="colour">${STATUS_COLOR[title] ?? 'Grey'}</ac:parameter><ac:parameter ac:name="title">${xml(title)}</ac:parameter></ac:structured-macro>`
 
 /** The page in Confluence's storage format: where it comes from, the picture and the coverage report. */
+export interface Summary {
+	sections: { heading: string; text: string | null; items: string[] }[]
+}
+
 export function pageBody(o: {
 	boardName: string
 	scopeName: string
@@ -54,12 +58,18 @@ export function pageBody(o: {
 	by: string
 	image: string | null
 	coverage: Coverage | null
+	summary?: Summary | null
 }) {
 	const date = new Date().toISOString().slice(0, 10)
 	const parts = [
 		`<p>Published from co-bord, board <a href="${xml(o.boardUrl)}">${xml(o.boardName)}</a>${o.scopeName !== o.boardName ? `, frame ${xml(o.scopeName)}` : ''}, by ${xml(o.by)} on ${date}. Changes made here are replaced the next time it is published.</p>`,
 	]
 	if (o.image) parts.push(`<p><ac:image ac:width="1200"><ri:attachment ri:filename="${xml(o.image)}" /></ac:image></p>`)
+	for (const section of o.summary?.sections ?? []) {
+		parts.push(`<h2>${xml(section.heading)}</h2>`)
+		if (section.text) parts.push(`<p>${xml(section.text)}</p>`)
+		if (section.items.length) parts.push(`<ul>${section.items.map((i) => `<li>${xml(i)}</li>`).join('')}</ul>`)
+	}
 	const c = o.coverage
 	if (c) {
 		parts.push('<h2>Test coverage</h2>')
@@ -80,6 +90,23 @@ export function pageBody(o: {
 		parts.push('</tbody></table>')
 	}
 	return parts.join('')
+}
+
+function parseSummary(value: unknown): Summary | null {
+	if (!value || typeof value !== 'object') return null
+	const sections = (value as { sections?: unknown }).sections
+	if (!Array.isArray(sections)) return null
+	const text = (x: unknown, max: number) => (typeof x === 'string' ? x.slice(0, max) : '')
+	return {
+		sections: sections.slice(0, 30).map((s) => {
+			const section = (s ?? {}) as Record<string, unknown>
+			return {
+				heading: text(section.heading, 200) || 'Summary',
+				text: text(section.text, 4000) || null,
+				items: (Array.isArray(section.items) ? section.items.slice(0, 200) : []).map((i) => text(i, 1000)).filter(Boolean),
+			}
+		}),
+	}
 }
 
 function parseCoverage(value: unknown): Coverage | null {
@@ -306,10 +333,11 @@ export function confluenceRoutes(app: FastifyInstance, ctx: Ctx) {
 		if (!/^https?:\/\//.test(boardUrl)) throw badRequest('boardUrl must be a web address')
 		const update = meta.update === true
 		const coverage = parseCoverage(meta.coverage)
+		const summary = parseSummary(meta.summary)
 
 		const { rows: boardRows } = await db.query<{ name: string }>('SELECT name FROM boards WHERE id = $1', [req.params.id])
 		const imageName = image ? 'co-bord.png' : null
-		const value = pageBody({ boardName: boardRows[0].name, scopeName, boardUrl, by: user.displayName, image: imageName, coverage })
+		const value = pageBody({ boardName: boardRows[0].name, scopeName, boardUrl, by: user.displayName, image: imageName, coverage, summary })
 
 		// the page published before, if it still exists
 		let existing: V2Page | null = null

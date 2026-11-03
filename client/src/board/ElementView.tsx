@@ -1,4 +1,5 @@
-import { memo, useEffect, useRef } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
+import { useBoardEnv } from './confluence'
 import {
 	arrowHead,
 	connectorGeometry,
@@ -85,13 +86,33 @@ export const BoxView = memo(function BoxView({ el, dark, editing, onText, onEdit
 			) : (
 				el.text && (
 					<div style={box}>
-						<div style={{ ...textStyle, width: '100%', maxHeight: el.type === 'text' ? undefined : '100%' }}>{el.text}</div>
+						<div style={{ ...textStyle, width: '100%', maxHeight: el.type === 'text' ? undefined : '100%' }}>{withMentions(el.text)}</div>
 					</div>
 				)
 			)}
 		</div>
 	)
 })
+
+/** A word being typed after @, right before the caret. */
+const MENTION_TYPING = /(^|[^\w@.])@([a-zA-Z0-9._-]*)$/
+/** @username in shown text. */
+const MENTION = /(@[a-zA-Z0-9._-]{3,40})/g
+
+/** Text with @mentions in bold. */
+export function withMentions(text: string) {
+	const parts = text.split(MENTION)
+	if (parts.length === 1) return text
+	return parts.map((part, i) =>
+		i % 2 ? (
+			<span key={i} style={{ fontWeight: 700, color: '#c01c37' }}>
+				{part}
+			</span>
+		) : (
+			part
+		),
+	)
+}
 
 function TextEditor({
 	el,
@@ -107,6 +128,8 @@ function TextEditor({
 	onEditEnd: () => void
 }) {
 	const ref = useRef<HTMLTextAreaElement>(null)
+	const { members } = useBoardEnv()
+	const [mention, setMention] = useState<{ query: string; start: number; index: number; zoom: number } | null>(null)
 	useEffect(() => {
 		const t = ref.current
 		if (!t) return
@@ -114,30 +137,76 @@ function TextEditor({
 		t.focus()
 		t.setSelectionRange(t.value.length, t.value.length)
 	}, [])
+
+	const q = mention?.query.toLowerCase() ?? ''
+	const candidates = mention
+		? members.filter((m) => m.username.toLowerCase().startsWith(q) || m.displayName.toLowerCase().includes(q)).slice(0, 6)
+		: []
+
+	function update(t: HTMLTextAreaElement) {
+		t.style.height = 'auto'
+		t.style.height = `${t.scrollHeight}px`
+		onText(el.id, t.value, el.type === 'text' ? t.scrollHeight + inset : undefined)
+		const before = t.value.slice(0, t.selectionStart)
+		const m = MENTION_TYPING.exec(before)
+		// the board's zoom, to keep the list readable at any zoom
+		const zoom = t.offsetWidth ? t.getBoundingClientRect().width / t.offsetWidth : 1
+		setMention(m ? { query: m[2], start: t.selectionStart - m[2].length - 1, index: 0, zoom } : null)
+	}
+
+	function pick(username: string) {
+		const t = ref.current
+		if (!t || !mention) return
+		const caret = t.selectionStart
+		const value = `${t.value.slice(0, mention.start)}@${username} ${t.value.slice(caret)}`
+		const at = mention.start + username.length + 2
+		// put the caret after the name right away, so the next key lands there
+		t.value = value
+		t.setSelectionRange(at, at)
+		onText(el.id, value)
+		setMention(null)
+	}
+
 	// vertically centered text: grow the textarea with its content
 	const centered = el.type !== 'text'
 	return (
-		<div style={{ ...style, display: 'flex', alignItems: centered ? 'center' : 'flex-start' }}>
+		// visible overflow, so the list of people isn't cut by the note
+		<div style={{ ...style, display: 'flex', alignItems: centered ? 'center' : 'flex-start', overflow: 'visible' }}>
 			<textarea
 				ref={ref}
 				value={el.text}
 				rows={1}
 				aria-label="Text"
+				aria-autocomplete="list"
+				aria-expanded={candidates.length > 0}
 				onPointerDown={(e) => e.stopPropagation()}
 				onKeyDown={(e) => {
 					e.stopPropagation()
+					if (candidates.length && mention) {
+						if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+							e.preventDefault()
+							const step = e.key === 'ArrowDown' ? 1 : -1
+							setMention({ ...mention, index: (mention.index + step + candidates.length) % candidates.length })
+							return
+						}
+						if (e.key === 'Enter' || e.key === 'Tab') {
+							e.preventDefault()
+							pick(candidates[mention.index].username)
+							return
+						}
+						if (e.key === 'Escape') {
+							e.preventDefault()
+							setMention(null)
+							return
+						}
+					}
 					if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) {
 						e.preventDefault()
 						onEditEnd()
 					}
 				}}
 				onBlur={onEditEnd}
-				onChange={(e) => {
-					const t = e.currentTarget
-					t.style.height = 'auto'
-					t.style.height = `${t.scrollHeight}px`
-					onText(el.id, t.value, el.type === 'text' ? t.scrollHeight + inset : undefined)
-				}}
+				onChange={(e) => update(e.currentTarget)}
 				style={{
 					font: 'inherit',
 					color: 'inherit',
@@ -155,6 +224,33 @@ function TextEditor({
 					whiteSpace: 'pre-wrap',
 				}}
 			/>
+			{candidates.length > 0 && mention && (
+				<ul
+					role="listbox"
+					aria-label="People to mention"
+					onPointerDown={(e) => {
+						// keep the textarea focused while picking
+						e.preventDefault()
+						e.stopPropagation()
+					}}
+					className="absolute top-full left-0 z-30 mt-1 w-56 rounded-lg border border-gray-200 bg-white py-1 text-left text-sm font-normal text-gray-900 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+					style={{ fontSize: 14, lineHeight: 1.3, transform: `scale(${1 / mention.zoom})`, transformOrigin: 'top left' }}
+				>
+					{candidates.map((m, i) => (
+						<li
+							key={m.id}
+							role="option"
+							aria-selected={i === mention.index}
+							onClick={() => pick(m.username)}
+							className={`flex cursor-pointer items-center gap-2 px-2 py-1.5 ${i === mention.index ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+						>
+							<span className="inline-block size-2.5 shrink-0 rounded-full" style={{ background: m.color }} />
+							<span className="truncate font-medium">{m.displayName}</span>
+							<span className="truncate text-xs text-gray-500">@{m.username}</span>
+						</li>
+					))}
+				</ul>
+			)}
 		</div>
 	)
 }

@@ -5,6 +5,7 @@ import * as Y from 'yjs'
 import { atLeast, boardAccess, type Role } from './access.js'
 import { cookieFromHeader, SESSION_COOKIE, type User, userForToken } from './auth.js'
 import type { Ctx } from './context.js'
+import { BoardWatcher } from './notify.js'
 import { isUuid } from './validate.js'
 
 export interface CollabContext {
@@ -18,6 +19,8 @@ export interface CollabContext {
  */
 export function createCollab(ctx: Ctx) {
 	const { db } = ctx
+
+	const watcher = new BoardWatcher(db, ctx.config.notifyDelayMs ?? 3000)
 
 	const hocuspocus = new Hocuspocus<CollabContext>({
 		quiet: true,
@@ -39,7 +42,12 @@ export function createCollab(ctx: Ctx) {
 		async onLoadDocument({ documentName, document }) {
 			const { rows } = await db.query<{ document: Buffer | null }>('SELECT document FROM boards WHERE id = $1', [documentName])
 			if (rows[0]?.document) Y.applyUpdate(document, new Uint8Array(rows[0].document))
+			watcher.loaded(documentName, document)
 			return document
+		},
+
+		async afterUnloadDocument({ documentName }) {
+			await watcher.unloaded(documentName)
 		},
 
 		async onStoreDocument({ documentName, document, lastContext }) {
@@ -80,10 +88,11 @@ export function createCollab(ctx: Ctx) {
 	}
 
 	async function close() {
+		await watcher.flushAll()
 		hocuspocus.flushPendingStores()
 		await Promise.all([...hocuspocus.documents.values()].map((d) => save(d.name, d, null).catch(() => {})))
 		hocuspocus.closeConnections()
 	}
 
-	return { hocuspocus, handle, close }
+	return { hocuspocus, handle, close, watcher }
 }
