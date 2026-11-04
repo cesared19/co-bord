@@ -1,5 +1,5 @@
 import type { BoardElement, BoxElement, Camera, ConnectorElement, Endpoint, Point, Rect, ShapeKind, TextBox } from './types'
-import { isBox } from './types'
+import { type FrameElement, isBox, isFrame } from './types'
 
 export function shapePath(kind: ShapeKind, w: number, h: number): string {
 	switch (kind) {
@@ -349,12 +349,37 @@ export function resolveTextColor(el: TextBox, dark: boolean): string {
 export const resolveStroke = (stroke: string, dark: boolean) => (stroke === 'auto' ? (dark ? '#d1d5db' : '#1f2937') : stroke)
 
 /** Everything that lies completely inside the frame (other frames included), which moves with it. */
+const inside = (b: Rect, f: Rect) => b.x >= f.x && b.y >= f.y && b.x + b.w <= f.x + f.w && b.y + b.h <= f.y + f.h
+
+/**
+ * The frame an element belongs to, among the frames that hold it whole: the smallest one; between frames of the
+ * same size (a frame pasted or duplicated over another), the one just below the element in z (its own frame, not
+ * the copy above it), or else the lowest.
+ */
+function ownerFrame(el: BoardElement, b: Rect, frames: FrameElement[]): FrameElement | null {
+	// a frame belongs only to bigger frames, never to one of the same size over it
+	const holding = frames.filter((f) => f.id !== el.id && inside(b, f) && (el.type !== 'frame' || f.w * f.h > b.w * b.h + 1))
+	if (!holding.length) return null
+	const area = Math.min(...holding.map((f) => f.w * f.h))
+	const smallest = holding.filter((f) => f.w * f.h <= area + 1)
+	const below = smallest.filter((f) => f.z < el.z).sort((a, c) => c.z - a.z)[0]
+	return below ?? smallest.sort((a, c) => a.z - c.z)[0]
+}
+
+/**
+ * What a frame holds: the elements completely inside it that belong to it (or to frames inside it). Something
+ * inside two frames goes with the one it belongs to (see ownerFrame), so moving a copy doesn't take the original's.
+ */
 export function frameContents(frame: Rect & { id: string }, elements: ElementMap): string[] {
+	const frames = [...elements.values()].filter(isFrame)
 	const ids: string[] = []
 	for (const el of elements.values()) {
 		if (el.id === frame.id) continue
 		const b = elementBounds(el, elements)
-		if (b.x >= frame.x && b.y >= frame.y && b.x + b.w <= frame.x + frame.w && b.y + b.h <= frame.y + frame.h) ids.push(el.id)
+		if (!inside(b, frame)) continue
+		const owner = ownerFrame(el, b, frames)
+		// (a frame of the same size over this one has no owner: it isn't held by it)
+		if (owner && (owner.id === frame.id || (inside(owner, frame) && owner.w * owner.h < frame.w * frame.h))) ids.push(el.id)
 	}
 	return ids
 }

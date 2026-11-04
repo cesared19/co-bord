@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useBoardEnv } from './confluence'
 import {
 	arrowHead,
@@ -28,15 +28,18 @@ export const BoxView = memo(function BoxView({ el, dark, editing, onText, onEdit
 	const inset = textInsets(el)
 	const color = resolveTextColor(el, dark)
 	const justify = el.align === 'left' ? 'flex-start' : el.align === 'right' ? 'flex-end' : 'center'
+	// notes and shapes shrink their text to fit, whole words on a line, like other whiteboards
+	const fitted = useFittedFontSize(el, editing)
 	const textStyle: React.CSSProperties = {
 		fontFamily: FONT,
-		fontSize: el.fontSize,
+		fontSize: fitted.size,
 		lineHeight: LINE_HEIGHT,
 		fontWeight: el.bold ? 700 : 400,
 		color,
 		textAlign: el.align,
 		whiteSpace: 'pre-wrap',
-		overflowWrap: 'break-word',
+		// words break only when even the smallest size can't hold them
+		overflowWrap: fitted.breakWords ? 'anywhere' : 'normal',
 		...(el.done ? { textDecoration: 'line-through', opacity: 0.6 } : {}),
 	}
 	const box: React.CSSProperties = {
@@ -96,8 +99,10 @@ export const BoxView = memo(function BoxView({ el, dark, editing, onText, onEdit
 				/>
 			) : (
 				el.text && (
-					<div style={box}>
-						<div style={{ ...textStyle, width: '100%', maxHeight: el.type === 'text' ? undefined : '100%' }}>{withMentions(el.text)}</div>
+					<div style={box} ref={fitted.boxRef}>
+						<div ref={fitted.textRef} style={{ ...textStyle, width: '100%', maxHeight: el.type === 'text' ? undefined : '100%' }}>
+							{withMentions(el.text)}
+						</div>
 					</div>
 				)
 			)}
@@ -118,6 +123,56 @@ export const BoxView = memo(function BoxView({ el, dark, editing, onText, onEdit
 		</div>
 	)
 })
+
+/** The smallest text notes and shapes shrink to. */
+export const MIN_FONT = 7
+
+/**
+ * The font size at which a note's or shape's text fits its box, with whole words on each line: its own size
+ * when it fits, smaller when it doesn't (down to MIN_FONT, where long words break). Text elements grow instead.
+ */
+function useFittedFontSize(el: TextBox, editing: boolean) {
+	const boxRef = useRef<HTMLDivElement>(null)
+	const textRef = useRef<HTMLDivElement>(null)
+	const [fit, setFit] = useState<{ size: number; breakWords: boolean }>({ size: el.fontSize, breakWords: false })
+	const shrinks = el.type !== 'text' && !editing
+	const shape = el.type === 'shape' ? el.shape : ''
+	useLayoutEffect(() => {
+		const box = boxRef.current
+		const text = textRef.current
+		if (!shrinks || !box || !text) {
+			setFit({ size: el.fontSize, breakWords: false })
+			return
+		}
+		const saved = { size: text.style.fontSize, wrap: text.style.overflowWrap, max: text.style.maxHeight }
+		text.style.overflowWrap = 'normal'
+		text.style.maxHeight = 'none'
+		const fits = (size: number) => {
+			text.style.fontSize = `${size}px`
+			return text.scrollHeight <= box.clientHeight + 1 && text.scrollWidth <= box.clientWidth + 1
+		}
+		let result = { size: el.fontSize, breakWords: false }
+		if (!fits(el.fontSize)) {
+			let lo = MIN_FONT
+			let hi = el.fontSize
+			if (!fits(lo)) result = { size: MIN_FONT, breakWords: true }
+			else {
+				// the largest half point that fits
+				while (hi - lo > 0.5) {
+					const mid = (lo + hi) / 2
+					if (fits(mid)) lo = mid
+					else hi = mid
+				}
+				result = { size: Math.floor(lo * 2) / 2, breakWords: false }
+			}
+		}
+		text.style.fontSize = saved.size
+		text.style.overflowWrap = saved.wrap
+		text.style.maxHeight = saved.max
+		setFit((f) => (f.size === result.size && f.breakWords === result.breakWords ? f : result))
+	}, [shrinks, el.text, el.w, el.h, el.fontSize, el.bold, el.type, shape])
+	return { size: shrinks ? fit.size : el.fontSize, breakWords: shrinks && fit.breakWords, boxRef, textRef }
+}
 
 /** A word being typed after @, right before the caret. */
 const MENTION_TYPING = /(^|[^\w@.])@([a-zA-Z0-9._-]*)$/

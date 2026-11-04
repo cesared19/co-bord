@@ -139,8 +139,10 @@ function Floating({
 		if (!el) return
 		const w = el.offsetWidth
 		const h = el.offsetHeight
-		let left = at.x + 16
-		if (left + w > viewport.w - 8) left = Math.max(8, at.x - w - 16)
+		// right of the side toolbar, and inside the board
+		const minLeft = Math.min(72, Math.max(8, viewport.w - w - 8))
+		let left = Math.max(minLeft, at.x + 16)
+		if (left + w > viewport.w - 8) left = Math.max(minLeft, at.x - w - 16)
 		const top = Math.min(Math.max(8, at.y - 8), Math.max(8, viewport.h - h - 8))
 		setPos({ left, top })
 	}, [at.x, at.y, viewport.w, viewport.h, children])
