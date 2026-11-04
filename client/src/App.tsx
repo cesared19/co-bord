@@ -10,6 +10,7 @@ import { Projects } from './pages/Projects'
 import { Users } from './pages/Users'
 
 const BoardPage = lazy(() => import('./board/BoardPage'))
+const GuestBoard = lazy(() => import('./board/GuestBoard'))
 
 function RequireUser({ admin = false }: { admin?: boolean }) {
 	const { user, loading, needsSetup } = useAuth()
@@ -37,6 +38,14 @@ export function App() {
 				<Routes>
 					<Route path="/login" element={<Login />} />
 					<Route path="/setup" element={<Setup />} />
+					<Route
+						path="/g/:token"
+						element={
+							<Suspense fallback={null}>
+								<GuestBoard />
+							</Suspense>
+						}
+					/>
 					<Route element={<RequireUser />}>
 						<Route
 							path="/boards/:boardId"

@@ -255,6 +255,37 @@ const migrations: { version: string; sql: string }[] = [
 			ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check CHECK (kind IN ('mention', 'follow', 'rule', 'comment'));
 		`,
 	},
+	{
+		version: '0.0.9',
+		sql: `
+			-- boards and frames saved as templates of a project
+			CREATE TABLE project_templates (
+				id SERIAL PRIMARY KEY,
+				project_id INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+				name TEXT NOT NULL,
+				description TEXT NOT NULL DEFAULT '',
+				elements JSONB NOT NULL,
+				element_count INTEGER NOT NULL,
+				thumbnail BYTEA,
+				created_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+			);
+			CREATE INDEX project_templates_project_idx ON project_templates (project_id);
+
+			-- read-only links for people without an account; the token is kept encrypted (to show it again) and hashed (to find it)
+			CREATE TABLE board_share_links (
+				id SERIAL PRIMARY KEY,
+				board_id UUID NOT NULL REFERENCES boards (id) ON DELETE CASCADE,
+				token_hash TEXT NOT NULL UNIQUE,
+				token TEXT NOT NULL,
+				created_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+				expires_at TIMESTAMPTZ,
+				revoked_at TIMESTAMPTZ
+			);
+			CREATE INDEX board_share_links_board_idx ON board_share_links (board_id);
+		`,
+	},
 ]
 
 export async function migrate(db: Db): Promise<void> {

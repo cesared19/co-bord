@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { boxCorners, type ElementMap, elementBounds, unionBounds } from './geometry'
 import type { Camera, Point } from './types'
 import type { Peer } from './useBoardDoc'
@@ -28,23 +28,24 @@ export function Minimap({
 }) {
 	const ref = useRef<HTMLCanvasElement>(null)
 	const view = { x: -camera.x / camera.zoom, y: -camera.y / camera.zoom, w: viewport.w / camera.zoom, h: viewport.h / camera.zoom }
-	const content = unionBounds([...elements.values()].map((el) => elementBounds(el, elements)))
+	const content = useMemo(() => unionBounds([...elements.values()].map((el) => elementBounds(el, elements))), [elements])
 	const area = unionBounds(content ? [content, view] : [view])!
 	const pad = Math.max(area.w, area.h) * 0.04
 	const scale = Math.min(W / (area.w + pad * 2), H / (area.h + pad * 2))
 	const ox = (W - area.w * scale) / 2 - area.x * scale
 	const oy = (H - area.h * scale) / 2 - area.y * scale
 	const toMap = (p: Point) => ({ x: p.x * scale + ox, y: p.y * scale + oy })
+	const ratio = window.devicePixelRatio || 1
 
-	useEffect(() => {
-		const canvas = ref.current
-		const ctx = canvas?.getContext('2d')
-		if (!canvas || !ctx) return
-		const ratio = window.devicePixelRatio || 1
+	// the elements are drawn once per change into a layer; panning only redraws the view and cursors on top
+	const layerKey = `${Math.round(scale * 1e6)}:${Math.round(ox)}:${Math.round(oy)}:${dark}`
+	const layer = useMemo(() => {
+		const canvas = document.createElement('canvas')
 		canvas.width = W * ratio
 		canvas.height = H * ratio
+		const ctx = canvas.getContext('2d')
+		if (!ctx) return canvas
 		ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
-		ctx.clearRect(0, 0, W, H)
 		const muted = dark ? '#4b5563' : '#cbd5e1'
 		for (const el of [...elements.values()].sort((a, b) => (a.type === 'frame' ? 0 : 1) - (b.type === 'frame' ? 0 : 1))) {
 			if (el.type === 'connector') continue
@@ -64,6 +65,23 @@ export function Minimap({
 			ctx.closePath()
 			ctx.fill()
 		}
+		return canvas
+		// toMap follows the key's numbers
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [elements, layerKey, ratio])
+
+	useEffect(() => {
+		const canvas = ref.current
+		const ctx = canvas?.getContext('2d')
+		if (!canvas || !ctx) return
+		if (canvas.width !== W * ratio) {
+			canvas.width = W * ratio
+			canvas.height = H * ratio
+		}
+		ctx.setTransform(1, 0, 0, 1, 0, 0)
+		ctx.clearRect(0, 0, canvas.width, canvas.height)
+		ctx.drawImage(layer, 0, 0)
+		ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
 		for (const peer of peers) {
 			if (!peer.cursor) continue
 			const p = toMap(peer.cursor)

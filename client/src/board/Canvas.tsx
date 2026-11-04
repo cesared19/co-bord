@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { BoxView, ConnectorView, FrameView } from './ElementView'
 import { FacilitationMenu, TimerPill, VoteBadges, VoteRanking, VotingBanner } from './Facilitation'
 import { useServerClock, useSession } from './session'
-import { TemplatePicker } from './TemplatePicker'
+import { SaveTemplateDialog, TemplatePicker } from './TemplatePicker'
 import { boardLinks, canWriteSparky, type SparkyInfo, useLinkResults } from './sparky'
 import { CoveragePanel, LinkBadges, LinkEditor, LinksPopover } from './SparkyLinks'
 import {
@@ -34,7 +34,6 @@ import { RetroPanel } from './RetroPanel'
 import type { SummarySection } from './retro'
 import type { Follows } from './follows'
 import { api } from '../lib/api'
-import type { Template } from './templates'
 import { download, renderPng } from './exportPng'
 import { ContextToolbar } from './ContextToolbar'
 import { fitSize, keepsRatio, MEDIA_HEADER, type NewMedia, parseMediaUrl } from './media'
@@ -161,6 +160,10 @@ interface Props {
 	/** The teammate whose view this person follows (their awareness client id). */
 	following: number | null
 	onFollow: (clientId: number | null) => void
+	/** Opened with a share link: read-only, without comments, rules, history or the project's integrations. */
+	guest?: boolean
+	/** The user owns the project (deletes anyone's templates). */
+	owner?: boolean
 	user: { id: number; displayName: string }
 	boardName: string
 	projectId: number
@@ -199,6 +202,8 @@ export function Canvas({
 	dark,
 	following,
 	onFollow,
+	guest = false,
+	owner = false,
 	user,
 	boardName,
 	projectId,
@@ -303,6 +308,8 @@ export function Canvas({
 	const voting = session.voting?.active ?? false
 	const [showRanking, setShowRanking] = useState(false)
 	const [showTemplates, setShowTemplates] = useState(false)
+	/** Saving the board (frameId null) or a frame as a project template. */
+	const [savingTemplate, setSavingTemplate] = useState<{ frameId: string | null } | null>(null)
 
 	// SparkyTC: results of everything linked on the board, in the current build
 	const sparkyReady = !!sparky?.connected && !sparky.error
@@ -310,7 +317,7 @@ export function Canvas({
 	const linkResults = useLinkResults(projectId, allLinks, sparkyReady)
 	const [openLinks, setOpenLinks] = useState<string | null>(null)
 	const [panel, setPanel] = useState<'coverage' | 'retro' | 'rules' | 'comments' | 'history' | null>(null)
-	const comments = useComments(boardId, provider)
+	const comments = useComments(boardId, provider, !guest)
 	/** A comment being written: where it goes, and where on screen it was started. */
 	const [composer, setComposer] = useState<{ elementId: string | null; x: number; y: number } | null>(null)
 	const [openThread, setOpenThread] = useState<number | null>(null)
@@ -617,10 +624,32 @@ export function Canvas({
 		[dark, boardName],
 	)
 
-	const insertTemplate = useCallback(
-		(template: Template) => {
+	/** Files of elements from another project (pasted, a template, an import) copied into this one. */
+	const localizeAssets = useCallback(
+		async (items: BoardElement[]): Promise<BoardElement[]> => {
+			const assetIds = items.flatMap((el) => (el.type === 'media' && el.assetId ? [el.assetId] : []))
+			if (!assetIds.length) return items
+			const assets = await api<{ assets: Record<string, { id: string; url: string }> }>(`/api/boards/${boardId}/assets/copy`, {
+				method: 'POST',
+				body: { ids: [...new Set(assetIds)] },
+			})
+				.then((r) => r.assets)
+				.catch(() => ({}) as Record<string, { id: string; url: string }>)
+			return items.map((el) => {
+				if (el.type !== 'media' || !el.assetId) return el
+				const copy = assets[el.assetId]
+				if (!copy) return el
+				return { ...el, assetId: copy.id, src: el.src.split(`/api/assets/${el.assetId}`).join(copy.url) }
+			})
+		},
+		[boardId],
+	)
+
+	/** Adds a template's or an import's elements in free space next to what's there, and shows them. */
+	const insertItems = useCallback(
+		async (raw: BoardElement[]) => {
 			if (readOnly) return
-			const items = template.build()
+			const items = await localizeAssets(raw)
 			const source = new Map(items.map((el) => [el.id, el]))
 			const bounds = unionBounds(items.map((el) => elementBounds(el, source)))
 			if (!bounds) return
@@ -633,7 +662,7 @@ export function Canvas({
 			setSelection([])
 			setCamera(fitCamera({ x: spot.x, y: spot.y, w: bounds.w, h: bounds.h + 40 }, size.w, size.h, 60, 1))
 		},
-		[readOnly, store, size, freeSpot],
+		[readOnly, store, size, freeSpot, localizeAssets],
 	)
 
 	/** A Confluence page card, named after the page. */
@@ -1306,7 +1335,7 @@ export function Canvas({
 				f: 'frame',
 				c: 'comment',
 			}
-			if (tools[key] && (!readOnly || key === 'v' || key === 'h' || key === 'c')) {
+			if (tools[key] && (!readOnly || key === 'v' || key === 'h' || (key === 'c' && !guest))) {
 				if (key === 'r') setShapeKind('rect')
 				setTool(tools[key])
 			}
@@ -1358,26 +1387,12 @@ export function Canvas({
 					setSelection(store.clone(list, offset, source))
 				}
 				// uploaded files from another project's board are copied into this one, so everyone here can see them
-				const assetIds = items.flatMap((el) => (el.type === 'media' && el.assetId ? [el.assetId] : []))
-				if (!assetIds.length) place(items)
+				if (!items.some((el) => el.type === 'media' && el.assetId)) place(items)
 				else
-					void api<{ assets: Record<string, { id: string; url: string }> }>(`/api/boards/${boardId}/assets/copy`, {
-						method: 'POST',
-						body: { ids: assetIds },
+					void localizeAssets(items).then((list) => {
+						store.checkpoint()
+						place(list)
 					})
-						.then((r) => r.assets)
-						.catch(() => ({}) as Record<string, { id: string; url: string }>)
-						.then((assets) => {
-							store.checkpoint()
-							place(
-								items.map((el) => {
-									if (el.type !== 'media' || !el.assetId) return el
-									const copy = assets[el.assetId]
-									if (!copy) return el
-									return { ...el, assetId: copy.id, src: el.src.split(`/api/assets/${el.assetId}`).join(copy.url) }
-								}),
-							)
-						})
 				return
 			}
 			const base = defaultElement('text')
@@ -1398,6 +1413,8 @@ export function Canvas({
 		}
 	}, [
 		boardId,
+		guest,
+		localizeAssets,
 		store,
 		readOnly,
 		size,
@@ -1431,12 +1448,45 @@ export function Canvas({
 		return { left: p.x, top: p.y, width: r.w * camera.zoom, height: r.h * camera.zoom }
 	}
 
+	/** The elements a connector is attached to; the same map while they don't change, so its view isn't redrawn. */
+	const endsCache = useRef(new Map<string, { from?: BoardElement; to?: BoardElement; map: ElementMap }>())
 	const endsFor = (el: ConnectorElement): ElementMap => {
+		const from = el.from.id ? elements.get(el.from.id) : undefined
+		const to = el.to.id ? elements.get(el.to.id) : undefined
+		const hit = endsCache.current.get(el.id)
+		if (hit && hit.from === from && hit.to === to) return hit.map
 		const m: ElementMap = new Map()
-		if (el.from.id && elements.has(el.from.id)) m.set(el.from.id, elements.get(el.from.id)!)
-		if (el.to.id && elements.has(el.to.id)) m.set(el.to.id, elements.get(el.to.id)!)
+		if (from) m.set(from.id, from)
+		if (to) m.set(to.id, to)
+		endsCache.current.set(el.id, { from, to, map: m })
 		return m
 	}
+
+	// only what's on screen, with a margin, is drawn: big boards stay smooth. The selection, the element being
+	// edited and players (so they keep playing) are always there.
+	const viewRect = { x: -camera.x / camera.zoom, y: -camera.y / camera.zoom, w: size.w / camera.zoom, h: size.h / camera.zoom }
+	const margin = Math.max(viewRect.w, viewRect.h) * 0.5
+	const cullRect = { x: viewRect.x - margin, y: viewRect.y - margin, w: viewRect.w + margin * 2, h: viewRect.h + margin * 2 }
+	const keep = new Set(liveSelection)
+	if (editing) keep.add(editing)
+	const roughBounds = (el: BoardElement): Rect => {
+		if (isBox(el)) return elementBounds(el, elements)
+		const end = (e: Endpoint) => {
+			const box = e.id ? elements.get(e.id) : undefined
+			return isBox(box) ? elementBounds(box, elements) : { x: e.x, y: e.y, w: 0, h: 0 }
+		}
+		const b = unionBounds([end(el.from), end(el.to)])!
+		// curves bulge out of the box between their ends
+		return { x: b.x - 120, y: b.y - 120, w: b.w + 240, h: b.h + 240 }
+	}
+	const drawn = size.w
+		? sorted.filter(
+				(el) =>
+					keep.has(el.id) ||
+					(el.type === 'media' && (el.kind === 'video' || el.kind === 'youtube' || el.kind === 'vimeo' || el.kind === 'drive')) ||
+					intersects(cullRect, roughBounds(el)),
+			)
+		: sorted
 
 	let connectPreview: ConnectorGeometry | null = null
 	if (d?.kind === 'connect') {
@@ -1502,7 +1552,7 @@ export function Canvas({
 						className="absolute top-0 left-0 origin-top-left"
 						style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
 					>
-						{sorted.map((el) =>
+						{drawn.map((el) =>
 							el.type === 'connector' ? (
 								<ConnectorView
 									key={el.id}
@@ -1902,7 +1952,7 @@ export function Canvas({
 							/>
 						) : null
 					})()}
-				{!panel && (
+				{!panel && !guest && (
 					<div data-ui className="absolute top-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-2">
 						<button
 							type="button"
@@ -2064,11 +2114,28 @@ export function Canvas({
 				)}
 				{showTemplates && (
 					<TemplatePicker
+						projectId={projectId}
+						boardId={boardId}
+						userId={user.id}
+						owner={owner}
 						onClose={() => setShowTemplates(false)}
-						onPick={(template) => {
+						onSaveBoard={() => {
 							setShowTemplates(false)
-							insertTemplate(template)
+							setSavingTemplate({ frameId: null })
 						}}
+						onInsert={async (items) => {
+							await insertItems(items)
+							setShowTemplates(false)
+						}}
+					/>
+				)}
+				{savingTemplate && (
+					<SaveTemplateDialog
+						projectId={projectId}
+						elements={elements}
+						frameId={savingTemplate.frameId}
+						boardName={boardName}
+						onClose={() => setSavingTemplate(null)}
 					/>
 				)}
 
@@ -2189,6 +2256,7 @@ export function Canvas({
 						onExportFrame={exportFrame}
 						onPublishFrame={confluenceReady ? (id) => setPublishing(id) : undefined}
 						onGenerateTests={sparkyReady ? (id) => setGenerating(id) : undefined}
+						onSaveTemplate={(id) => setSavingTemplate({ frameId: id })}
 						onCreateIssue={
 							jiraReady
 								? (id) => api(`/api/boards/${boardId}/elements/${encodeURIComponent(id)}/jira`, { method: 'POST' }).then(() => undefined)

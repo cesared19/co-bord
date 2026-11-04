@@ -26,6 +26,8 @@ import { jiraRoutes } from './routes/jira.js'
 import { ruleRoutes } from './routes/rules.js'
 import { commentRoutes } from './routes/comments.js'
 import { versionRoutes } from './routes/versions.js'
+import { templateRoutes } from './routes/templates.js'
+import { shareRoutes } from './routes/shares.js'
 
 export async function buildApp(config: Config, db: Db, opts: { logger?: boolean; retroWriter?: RetroWriter } = {}) {
 	const app = Fastify({ logger: opts.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024 })
@@ -59,6 +61,8 @@ export async function buildApp(config: Config, db: Db, opts: { logger?: boolean;
 	ruleRoutes(app, ctx)
 	commentRoutes(app, ctx)
 	versionRoutes(app, ctx)
+	templateRoutes(app, ctx)
+	shareRoutes(app, ctx)
 
 	const collab = createCollab(ctx)
 	app.get('/collab', { websocket: true }, (socket, req) => collab.handle(socket, req.raw))

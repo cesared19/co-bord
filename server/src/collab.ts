@@ -8,12 +8,15 @@ import type { Ctx } from './context.js'
 import { BoardWatcher } from './notify.js'
 import { type BoardEditor, RuleEngine } from './rules.js'
 import { isUuid } from './validate.js'
+import { GUEST_USER, shareLink } from './shares.js'
 import { cleanupAssets } from './cleanup.js'
 import { pruneLocks } from './loginLimit.js'
 
 export interface CollabContext {
 	user: User
 	role: Role
+	/** Set for guests: the share link they came with. */
+	guestLinkId?: number
 }
 
 /**
@@ -31,10 +34,18 @@ export function createCollab(ctx: Ctx) {
 		debounce: 1500,
 		maxDebounce: 10000,
 
-		async onAuthenticate({ documentName, requestHeaders, connectionConfig }) {
+		async onAuthenticate({ documentName, requestHeaders, connectionConfig, token }) {
 			// browsers send the cookie on cross-site sockets too: only accept our own pages
 			const origin = requestHeaders.get('origin')
 			if (origin && new URL(origin).host !== requestHeaders.get('host')) throw new Error('Wrong origin')
+			// a share link (the guest page sends it): read-only, that board only, signed in or not
+			const link = token ? await shareLink(db, token) : null
+			if (token && !link) throw new Error("This link doesn't work anymore")
+			if (link) {
+				if (link.boardId !== documentName) throw new Error('Board not found')
+				connectionConfig.readOnly = true
+				return { user: GUEST_USER, role: 'viewer', guestLinkId: link.id }
+			}
 			const user = await userForToken(db, cookieFromHeader(requestHeaders.get('cookie'), SESSION_COOKIE))
 			if (!user) throw new Error('Not signed in')
 			if (!isUuid(documentName)) throw new Error('Board not found')
@@ -146,6 +157,13 @@ export function createCollab(ctx: Ctx) {
 			await connection.disconnect()
 		}
 		await db.query('UPDATE boards SET updated_by = $2 WHERE id = $1', [boardId, userId])
+	}
+
+	ctx.onShareRevoked = (linkId) => {
+		hocuspocus.documents.forEach((document) => {
+			for (const connection of document.getConnections())
+				if ((connection.context as CollabContext | undefined)?.guestLinkId === linkId) connection.close(ACCESS_CHANGED)
+		})
 	}
 
 	ctx.onBoardDeleted = (boardId) => hocuspocus.closeConnections(boardId)

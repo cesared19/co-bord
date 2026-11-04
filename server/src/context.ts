@@ -27,6 +27,8 @@ export interface Ctx {
 	broadcastBoard?: (boardId: string, message: string) => void
 	/** Set by the collaboration server: replaces the board's elements with a version's, for everyone. */
 	restoreBoard?: (boardId: string, version: import('yjs').Doc, userId: number) => Promise<void>
+	/** Set by the collaboration server: closes the boards opened with a share link that was revoked. */
+	onShareRevoked?: (linkId: number) => void
 	/** Set by the collaboration server: card rules. */
 	rules?: RuleEngine
 }
