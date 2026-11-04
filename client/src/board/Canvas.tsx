@@ -6,7 +6,10 @@ import { useServerClock, useSession } from './session'
 import { TemplatePicker } from './TemplatePicker'
 import { boardLinks, canWriteSparky, type SparkyInfo, useLinkResults } from './sparky'
 import { CoveragePanel, LinkBadges, LinkEditor, LinksPopover } from './SparkyLinks'
-import { BookOpenText, FlaskConical, Grid3x3, Map as MapIcon, RotateCw, Zap } from 'lucide-react'
+import { BookOpenText, FlaskConical, Grid3x3, History, Map as MapIcon, MessageSquare, RotateCw, Zap } from 'lucide-react'
+import { anchorFor, CommentPins, CommentsPanel, Composer, pinPoint, ThreadPopover, useComments } from './Comments'
+import { HistoryPanel } from './HistoryPanel'
+import { MediaSync, MediaSyncContext } from './mediaSync'
 import { GenerateTestsDialog } from './GenerateTestsDialog'
 import { IssueBadges } from './IssueBadges'
 import { RulesPanel } from './RulesPanel'
@@ -289,7 +292,13 @@ export function Canvas({
 	const allLinks = useMemo(() => boardLinks(elements.values()), [elements])
 	const linkResults = useLinkResults(projectId, allLinks, sparkyReady)
 	const [openLinks, setOpenLinks] = useState<string | null>(null)
-	const [panel, setPanel] = useState<'coverage' | 'retro' | 'rules' | null>(null)
+	const [panel, setPanel] = useState<'coverage' | 'retro' | 'rules' | 'comments' | 'history' | null>(null)
+	const comments = useComments(boardId, provider)
+	/** A comment being written: where it goes, and where on screen it was started. */
+	const [composer, setComposer] = useState<{ elementId: string | null; x: number; y: number } | null>(null)
+	const [openThread, setOpenThread] = useState<number | null>(null)
+	const [showResolved, setShowResolved] = useState(false)
+	const mediaSync = useMemo(() => new MediaSync(store.doc, !readOnly, user.displayName), [store, readOnly, user.displayName])
 	const showCoverage = panel === 'coverage'
 	const setShowCoverage = (on: boolean) => setPanel(on ? 'coverage' : null)
 	const openPanel = (which: 'coverage' | 'retro') => setPanel(which)
@@ -648,11 +657,21 @@ export function Canvas({
 
 	const focused = useRef<string | null>(null)
 	useEffect(() => {
+		if (focusId?.startsWith('comment:') && focused.current !== focusId && size.w && comments.loaded) {
+			focused.current = focusId
+			const thread = comments.threads.find((t) => t.id === Number(focusId.slice(8)))
+			const p = thread && pinPoint(thread, elements)
+			if (thread && p) {
+				setCamera((c) => ({ ...c, x: size.w / 2 - p.x * c.zoom, y: size.h / 2 - p.y * c.zoom }))
+				setOpenThread(thread.id)
+			}
+			return
+		}
 		if (!focusId || focused.current === focusId || !size.w || !elements.has(focusId)) return
 		focused.current = focusId
 		setSelection([focusId])
 		fit([focusId])
-	}, [focusId, elements, size.w, fit])
+	}, [focusId, elements, size.w, size.h, fit, comments.loaded, comments.threads])
 
 	useEffect(() => {
 		const el = containerRef.current
@@ -761,6 +780,12 @@ export function Canvas({
 			return
 		}
 
+		if (tool === 'comment') {
+			setComposer(anchorFor(world, id, elementsRef.current))
+			setOpenThread(null)
+			setTool('select')
+			return
+		}
 		if (tool === 'sticky' || tool === 'text' || tool === 'shape' || tool === 'frame') {
 			if (readOnly) return
 			drag.current = { kind: 'create', type: tool, startWorld: world, current: world }
@@ -1140,8 +1165,9 @@ export function Canvas({
 				r: 'shape',
 				l: 'connector',
 				f: 'frame',
+				c: 'comment',
 			}
-			if (tools[key] && (!readOnly || key === 'v' || key === 'h')) {
+			if (tools[key] && (!readOnly || key === 'v' || key === 'h' || key === 'c')) {
 				if (key === 'r') setShapeKind('rect')
 				setTool(tools[key])
 			}
@@ -1296,559 +1322,656 @@ export function Canvas({
 	const showGrid = gridSize >= 8
 
 	return (
-		<div className="relative h-full w-full overflow-hidden select-none" style={{ background: 'var(--board-bg)' }}>
-			<div
-				ref={containerRef}
-				className="absolute inset-0 touch-none"
-				style={{
-					cursor,
-					backgroundImage: showGrid ? 'radial-gradient(var(--board-dot) 1.2px, transparent 1.2px)' : undefined,
-					backgroundSize: `${gridSize}px ${gridSize}px`,
-					backgroundPosition: `${camera.x}px ${camera.y}px`,
-				}}
-				onPointerDown={onPointerDown}
-				onPointerMove={onPointerMove}
-				onPointerUp={onPointerUp}
-				onPointerCancel={onPointerUp}
-				onPointerLeave={() => sendCursor(null)}
-				onDoubleClick={onDoubleClick}
-				onDragOver={(e) => {
-					if (readOnly || !e.dataTransfer.types.some((t) => t === 'Files' || t === 'text/uri-list')) return
-					e.preventDefault()
-					setDropping(true)
-				}}
-				onDragLeave={(e) => {
-					if (e.currentTarget === e.target) setDropping(false)
-				}}
-				onDrop={(e) => {
-					setDropping(false)
-					if (readOnly) return
-					e.preventDefault()
-					const at = toWorld(cameraRef.current, localPoint(e))
-					const files = [...e.dataTransfer.files]
-					if (files.length) return void insertFiles(files, at, true)
-					const media = parseMediaUrl(e.dataTransfer.getData('text/uri-list').split('\n')[0] ?? '')
-					if (media) insertMedia([media], at, true)
-				}}
-				onContextMenu={(e) => e.preventDefault()}
-			>
+		<MediaSyncContext.Provider value={mediaSync}>
+			<div className="relative h-full w-full overflow-hidden select-none" style={{ background: 'var(--board-bg)' }}>
 				<div
-					className="absolute top-0 left-0 origin-top-left"
-					style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
+					ref={containerRef}
+					className="absolute inset-0 touch-none"
+					style={{
+						cursor,
+						backgroundImage: showGrid ? 'radial-gradient(var(--board-dot) 1.2px, transparent 1.2px)' : undefined,
+						backgroundSize: `${gridSize}px ${gridSize}px`,
+						backgroundPosition: `${camera.x}px ${camera.y}px`,
+					}}
+					onPointerDown={onPointerDown}
+					onPointerMove={onPointerMove}
+					onPointerUp={onPointerUp}
+					onPointerCancel={onPointerUp}
+					onPointerLeave={() => sendCursor(null)}
+					onDoubleClick={onDoubleClick}
+					onDragOver={(e) => {
+						if (readOnly || !e.dataTransfer.types.some((t) => t === 'Files' || t === 'text/uri-list')) return
+						e.preventDefault()
+						setDropping(true)
+					}}
+					onDragLeave={(e) => {
+						if (e.currentTarget === e.target) setDropping(false)
+					}}
+					onDrop={(e) => {
+						setDropping(false)
+						if (readOnly) return
+						e.preventDefault()
+						const at = toWorld(cameraRef.current, localPoint(e))
+						const files = [...e.dataTransfer.files]
+						if (files.length) return void insertFiles(files, at, true)
+						const media = parseMediaUrl(e.dataTransfer.getData('text/uri-list').split('\n')[0] ?? '')
+						if (media) insertMedia([media], at, true)
+					}}
+					onContextMenu={(e) => e.preventDefault()}
 				>
-					{sorted.map((el) =>
-						el.type === 'connector' ? (
-							<ConnectorView
-								key={el.id}
-								el={el}
-								ends={endsFor(el)}
-								dark={dark}
-								editing={editing === el.id}
-								onLabel={onLabel}
-								onEditEnd={finishEditing}
-							/>
-						) : el.type === 'frame' ? (
-							<FrameView
-								key={el.id}
-								el={el}
-								zoom={camera.zoom}
-								dark={dark}
-								editing={editing === el.id}
-								onTitle={onTitle}
-								onEditEnd={finishEditing}
-							/>
-						) : el.type === 'media' ? (
-							<MediaView key={el.id} el={el} dark={dark} active={!d && liveSelection.length === 1 && liveSelection[0] === el.id} />
-						) : (
-							<BoxView key={el.id} el={el} dark={dark} editing={editing === el.id} onText={onText} onEditEnd={finishEditing} />
-						),
-					)}
-					{connectPreview && (
-						<svg style={{ position: 'absolute', overflow: 'visible', pointerEvents: 'none' }} width={1} height={1} aria-hidden>
-							<path
-								d={connectPreview.path}
-								fill="none"
-								stroke="#c01c37"
-								strokeWidth={2 / camera.zoom}
-								strokeDasharray={`${6 / camera.zoom} ${4 / camera.zoom}`}
-							/>
-						</svg>
-					)}
-				</div>
-
-				{/* overlays in screen space */}
-				<div className="pointer-events-none absolute inset-0">
-					<RemoteSelections peers={peers} elements={elements} camera={camera} />
-					{highlightEl && isBox(highlightEl) && (
-						<div className="absolute rounded-sm ring-2 ring-brand-500 ring-offset-2" style={screenRect(highlightEl)} />
-					)}
-					{selectedEls.map((el) =>
-						isBox(el) ? (
-							<div
-								key={el.id}
-								className="absolute border-2 border-brand-500"
-								style={{
-									...screenRect({
-										x: el.x - 2 / camera.zoom,
-										y: el.y - 2 / camera.zoom,
-										w: el.w + 4 / camera.zoom,
-										h: el.h + 4 / camera.zoom,
-									}),
-									...(rotationOf(el) ? { transform: `rotate(${rotationOf(el)}deg)` } : {}),
-								}}
-							/>
-						) : null,
-					)}
-					{selectedEls.length > 1 && selectionBounds && (
-						<div
-							className="absolute border border-dashed border-brand-500"
-							style={screenRect({
-								x: selectionBounds.x - 6 / camera.zoom,
-								y: selectionBounds.y - 6 / camera.zoom,
-								w: selectionBounds.w + 12 / camera.zoom,
-								h: selectionBounds.h + 12 / camera.zoom,
-							})}
-						/>
-					)}
-					{selectedEls.length > 1 &&
-						selectionBounds &&
-						!readOnly &&
-						!d &&
-						HANDLES.map((h) => {
-							const s = toScreen(camera, handlePoint(selectionBounds, h))
-							return (
-								<div
-									key={h}
-									data-handle={`scale:${h}`}
-									title="Drag to resize everything selected"
-									className="pointer-events-auto absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-brand-500 bg-white"
-									style={{ left: s.x, top: s.y, cursor: handleCursor(h, 0) }}
+					<div
+						className="absolute top-0 left-0 origin-top-left"
+						style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
+					>
+						{sorted.map((el) =>
+							el.type === 'connector' ? (
+								<ConnectorView
+									key={el.id}
+									el={el}
+									ends={endsFor(el)}
+									dark={dark}
+									editing={editing === el.id}
+									onLabel={onLabel}
+									onEditEnd={finishEditing}
 								/>
-							)
-						})}
-					{single && isBox(single) && !readOnly && editing !== single.id && (
-						<>
-							{HANDLES.map((h) => {
-								const p = rotatePoint(handlePoint(single, h), center(single), rotationOf(single))
-								const s = toScreen(camera, p)
+							) : el.type === 'frame' ? (
+								<FrameView
+									key={el.id}
+									el={el}
+									zoom={camera.zoom}
+									dark={dark}
+									editing={editing === el.id}
+									onTitle={onTitle}
+									onEditEnd={finishEditing}
+								/>
+							) : el.type === 'media' ? (
+								<MediaView key={el.id} el={el} dark={dark} active={!d && liveSelection.length === 1 && liveSelection[0] === el.id} />
+							) : (
+								<BoxView key={el.id} el={el} dark={dark} editing={editing === el.id} onText={onText} onEditEnd={finishEditing} />
+							),
+						)}
+						{connectPreview && (
+							<svg style={{ position: 'absolute', overflow: 'visible', pointerEvents: 'none' }} width={1} height={1} aria-hidden>
+								<path
+									d={connectPreview.path}
+									fill="none"
+									stroke="#c01c37"
+									strokeWidth={2 / camera.zoom}
+									strokeDasharray={`${6 / camera.zoom} ${4 / camera.zoom}`}
+								/>
+							</svg>
+						)}
+					</div>
+
+					{/* overlays in screen space */}
+					<div className="pointer-events-none absolute inset-0">
+						<RemoteSelections peers={peers} elements={elements} camera={camera} />
+						{highlightEl && isBox(highlightEl) && (
+							<div className="absolute rounded-sm ring-2 ring-brand-500 ring-offset-2" style={screenRect(highlightEl)} />
+						)}
+						{selectedEls.map((el) =>
+							isBox(el) ? (
+								<div
+									key={el.id}
+									className="absolute border-2 border-brand-500"
+									style={{
+										...screenRect({
+											x: el.x - 2 / camera.zoom,
+											y: el.y - 2 / camera.zoom,
+											w: el.w + 4 / camera.zoom,
+											h: el.h + 4 / camera.zoom,
+										}),
+										...(rotationOf(el) ? { transform: `rotate(${rotationOf(el)}deg)` } : {}),
+									}}
+								/>
+							) : null,
+						)}
+						{selectedEls.length > 1 && selectionBounds && (
+							<div
+								className="absolute border border-dashed border-brand-500"
+								style={screenRect({
+									x: selectionBounds.x - 6 / camera.zoom,
+									y: selectionBounds.y - 6 / camera.zoom,
+									w: selectionBounds.w + 12 / camera.zoom,
+									h: selectionBounds.h + 12 / camera.zoom,
+								})}
+							/>
+						)}
+						{selectedEls.length > 1 &&
+							selectionBounds &&
+							!readOnly &&
+							!d &&
+							HANDLES.map((h) => {
+								const s = toScreen(camera, handlePoint(selectionBounds, h))
 								return (
 									<div
 										key={h}
-										data-handle={`resize:${h}`}
+										data-handle={`scale:${h}`}
+										title="Drag to resize everything selected"
 										className="pointer-events-auto absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-brand-500 bg-white"
-										style={{ left: s.x, top: s.y, cursor: handleCursor(h, rotationOf(single)) }}
+										style={{ left: s.x, top: s.y, cursor: handleCursor(h, 0) }}
 									/>
 								)
 							})}
-							{single.type !== 'frame' &&
-								(() => {
-									const c = center(single)
-									const r = rotationOf(single)
-									// beyond the top right corner: clear of the connect handles and the toolbar
-									const top = rotatePoint({ x: single.x + single.w + 18 / camera.zoom, y: single.y - 18 / camera.zoom }, c, r)
-									const s = toScreen(camera, top)
+						{single && isBox(single) && !readOnly && editing !== single.id && (
+							<>
+								{HANDLES.map((h) => {
+									const p = rotatePoint(handlePoint(single, h), center(single), rotationOf(single))
+									const s = toScreen(camera, p)
 									return (
 										<div
-											data-handle="rotate:0"
-											title={`Rotate (Shift: 15° steps)${r ? ` · ${Math.round(r)}°` : ''}`}
-											className="pointer-events-auto absolute flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-brand-500 bg-white text-brand-600"
-											style={{ left: s.x, top: s.y }}
-										>
-											<RotateCw size={11} strokeWidth={3} />
-										</div>
-									)
-								})()}
-							{d?.kind === 'rotate' && (
-								<div
-									className="absolute -translate-x-1/2 rounded bg-gray-900 px-1.5 py-0.5 text-xs text-white tabular-nums"
-									style={{ left: toScreen(camera, center(single)).x, top: toScreen(camera, center(single)).y }}
-								>
-									{Math.round(rotationOf(single))}°
-								</div>
-							)}
-							{single.type !== 'frame' &&
-								SIDES.map((side) => {
-									const p = toScreen(camera, sidePoint(single, side))
-									const off = 22
-									const normal = rotatePoint(
-										side === 'top'
-											? { x: 0, y: -1 }
-											: side === 'bottom'
-												? { x: 0, y: 1 }
-												: side === 'left'
-													? { x: -1, y: 0 }
-													: { x: 1, y: 0 },
-										{ x: 0, y: 0 },
-										rotationOf(single),
-									)
-									const pos = { x: p.x + normal.x * off, y: p.y + normal.y * off }
-									return (
-										<div
-											key={side}
-											data-handle={`connect:${side}`}
-											title="Drag to connect"
-											className="pointer-events-auto absolute flex size-4 -translate-x-1/2 -translate-y-1/2 cursor-crosshair items-center justify-center rounded-full border-2 border-brand-500 bg-white text-[10px] leading-none font-bold text-brand-600 hover:scale-125"
-											style={{ left: pos.x, top: pos.y }}
-										>
-											+
-										</div>
+											key={h}
+											data-handle={`resize:${h}`}
+											className="pointer-events-auto absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-brand-500 bg-white"
+											style={{ left: s.x, top: s.y, cursor: handleCursor(h, rotationOf(single)) }}
+										/>
 									)
 								})}
-						</>
-					)}
-					{single?.type === 'connector' &&
-						!readOnly &&
-						(() => {
-							const g = connectorGeometry(single, elements)
-							return (['from', 'to'] as const).map((which) => {
-								const s = toScreen(camera, which === 'from' ? g.start : g.end)
-								const attachedEnd = !!single[which].id
-								return (
+								{single.type !== 'frame' &&
+									(() => {
+										const c = center(single)
+										const r = rotationOf(single)
+										// beyond the top right corner: clear of the connect handles and the toolbar
+										const top = rotatePoint({ x: single.x + single.w + 18 / camera.zoom, y: single.y - 18 / camera.zoom }, c, r)
+										const s = toScreen(camera, top)
+										return (
+											<div
+												data-handle="rotate:0"
+												title={`Rotate (Shift: 15° steps)${r ? ` · ${Math.round(r)}°` : ''}`}
+												className="pointer-events-auto absolute flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-brand-500 bg-white text-brand-600"
+												style={{ left: s.x, top: s.y }}
+											>
+												<RotateCw size={11} strokeWidth={3} />
+											</div>
+										)
+									})()}
+								{d?.kind === 'rotate' && (
 									<div
-										key={which}
-										data-handle={`end:${which}`}
-										title="Drag to reconnect"
-										className={`pointer-events-auto absolute size-3.5 -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border-2 border-brand-500 ${attachedEnd ? 'bg-brand-500' : 'bg-white'}`}
-										style={{ left: s.x, top: s.y }}
-									/>
-								)
-							})
-						})()}
-					{d?.kind === 'marquee' && (
-						<div className="absolute border border-brand-500 bg-brand-500/10" style={screenRect(rectFromPoints(d.startWorld, d.current))} />
-					)}
-					{d?.kind === 'create' && (
-						<div className="absolute border-2 border-dashed border-brand-500" style={screenRect(rectFromPoints(d.startWorld, d.current))} />
-					)}
-					<VoteBadges session={session.session} state={session} elements={elements} camera={camera} userId={user.id} />
-					{sparkyReady && (
-						<LinkBadges elements={elements} results={linkResults.results} camera={camera} open={openLinks} onOpen={setOpenLinks} />
-					)}
-					{sparkyReady && openLinks && elements.get(openLinks) && (
-						<LinksPopover
-							el={elements.get(openLinks)!}
-							results={linkResults.results}
-							info={sparky!}
-							camera={camera}
-							elements={elements}
-							buildNumber={linkResults.build?.buildNumber}
-							onClose={() => setOpenLinks(null)}
-						/>
-					)}
-					<IssueBadges elements={elements} camera={camera} />
-					{snapShown && <SnapOverlay shown={snapShown} camera={camera} />}
-					<RemoteCursors peers={peers} camera={camera} />
-				</div>
-			</div>
-
-			{uploads.length > 0 && (
-				<div data-ui className="absolute bottom-16 left-1/2 z-20 w-72 max-w-[calc(100%-32px)] -translate-x-1/2 space-y-1.5">
-					{uploads.map((u) => (
-						<div
-							key={u.id}
-							role="status"
-							className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
-						>
-							<div className="flex items-center justify-between gap-2">
-								<span className="truncate font-medium">{u.name}</span>
-								{u.error ? (
-									<button
-										type="button"
-										className="text-gray-500 hover:text-gray-900 dark:hover:text-white"
-										onClick={() => setUploads((list) => list.filter((x) => x.id !== u.id))}
+										className="absolute -translate-x-1/2 rounded bg-gray-900 px-1.5 py-0.5 text-xs text-white tabular-nums"
+										style={{ left: toScreen(camera, center(single)).x, top: toScreen(camera, center(single)).y }}
 									>
-										Dismiss
-									</button>
-								) : (
-									<span className="tabular-nums text-gray-500">{Math.round(u.progress * 100)}%</span>
+										{Math.round(rotationOf(single))}°
+									</div>
 								)}
-							</div>
-							{u.error ? (
-								<p className="mt-1 text-red-600 dark:text-red-400">{u.error}</p>
-							) : (
-								<div className="mt-1.5 h-1 overflow-hidden rounded bg-gray-200 dark:bg-gray-700">
-									<div className="h-full bg-brand-600 transition-[width]" style={{ width: `${u.progress * 100}%` }} />
-								</div>
-							)}
-						</div>
-					))}
-				</div>
-			)}
-			{dropping && (
-				<div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-brand-500 bg-brand-500/5 text-sm font-medium text-brand-700 dark:text-brand-300">
-					Drop images, videos or PDFs to add them to the board
-				</div>
-			)}
-
-			{(session.timer || session.voting || showRanking) && (
-				<div data-ui className="absolute top-3 left-1/2 z-20 flex max-w-[calc(100%-120px)] -translate-x-1/2 flex-col items-center gap-2">
-					<TimerPill session={session.session} state={session} canControl={!readOnly} />
-					<VotingBanner
-						session={session.session}
-						state={session}
-						canControl={!readOnly}
-						onResults={() => setShowRanking(!showRanking)}
-						onSummary={() => openPanel('retro')}
-					/>
-					{showRanking && session.voting && !session.voting.active && (
-						<VoteRanking
-							state={session}
+								{single.type !== 'frame' &&
+									SIDES.map((side) => {
+										const p = toScreen(camera, sidePoint(single, side))
+										const off = 22
+										const normal = rotatePoint(
+											side === 'top'
+												? { x: 0, y: -1 }
+												: side === 'bottom'
+													? { x: 0, y: 1 }
+													: side === 'left'
+														? { x: -1, y: 0 }
+														: { x: 1, y: 0 },
+											{ x: 0, y: 0 },
+											rotationOf(single),
+										)
+										const pos = { x: p.x + normal.x * off, y: p.y + normal.y * off }
+										return (
+											<div
+												key={side}
+												data-handle={`connect:${side}`}
+												title="Drag to connect"
+												className="pointer-events-auto absolute flex size-4 -translate-x-1/2 -translate-y-1/2 cursor-crosshair items-center justify-center rounded-full border-2 border-brand-500 bg-white text-[10px] leading-none font-bold text-brand-600 hover:scale-125"
+												style={{ left: pos.x, top: pos.y }}
+											>
+												+
+											</div>
+										)
+									})}
+							</>
+						)}
+						{single?.type === 'connector' &&
+							!readOnly &&
+							(() => {
+								const g = connectorGeometry(single, elements)
+								return (['from', 'to'] as const).map((which) => {
+									const s = toScreen(camera, which === 'from' ? g.start : g.end)
+									const attachedEnd = !!single[which].id
+									return (
+										<div
+											key={which}
+											data-handle={`end:${which}`}
+											title="Drag to reconnect"
+											className={`pointer-events-auto absolute size-3.5 -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border-2 border-brand-500 ${attachedEnd ? 'bg-brand-500' : 'bg-white'}`}
+											style={{ left: s.x, top: s.y }}
+										/>
+									)
+								})
+							})()}
+						{d?.kind === 'marquee' && (
+							<div
+								className="absolute border border-brand-500 bg-brand-500/10"
+								style={screenRect(rectFromPoints(d.startWorld, d.current))}
+							/>
+						)}
+						{d?.kind === 'create' && (
+							<div
+								className="absolute border-2 border-dashed border-brand-500"
+								style={screenRect(rectFromPoints(d.startWorld, d.current))}
+							/>
+						)}
+						<VoteBadges session={session.session} state={session} elements={elements} camera={camera} userId={user.id} />
+						{sparkyReady && (
+							<LinkBadges elements={elements} results={linkResults.results} camera={camera} open={openLinks} onOpen={setOpenLinks} />
+						)}
+						{sparkyReady && openLinks && elements.get(openLinks) && (
+							<LinksPopover
+								el={elements.get(openLinks)!}
+								results={linkResults.results}
+								info={sparky!}
+								camera={camera}
+								elements={elements}
+								buildNumber={linkResults.build?.buildNumber}
+								onClose={() => setOpenLinks(null)}
+							/>
+						)}
+						<IssueBadges elements={elements} camera={camera} />
+						{snapShown && <SnapOverlay shown={snapShown} camera={camera} />}
+						<CommentPins
+							threads={comments.threads}
 							elements={elements}
-							onClose={() => setShowRanking(false)}
-							onPick={(id) => {
-								setSelection([id])
-								fit([id])
+							camera={camera}
+							openId={openThread}
+							showResolved={panel === 'comments' && showResolved}
+							onOpen={(id) => {
+								setComposer(null)
+								setOpenThread(id)
 							}}
 						/>
-					)}
+						<RemoteCursors peers={peers} camera={camera} />
+					</div>
 				</div>
-			)}
-			{!panel && (
-				<div data-ui className="absolute top-3 right-3 z-10 flex gap-2">
+
+				{uploads.length > 0 && (
+					<div data-ui className="absolute bottom-16 left-1/2 z-20 w-72 max-w-[calc(100%-32px)] -translate-x-1/2 space-y-1.5">
+						{uploads.map((u) => (
+							<div
+								key={u.id}
+								role="status"
+								className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
+							>
+								<div className="flex items-center justify-between gap-2">
+									<span className="truncate font-medium">{u.name}</span>
+									{u.error ? (
+										<button
+											type="button"
+											className="text-gray-500 hover:text-gray-900 dark:hover:text-white"
+											onClick={() => setUploads((list) => list.filter((x) => x.id !== u.id))}
+										>
+											Dismiss
+										</button>
+									) : (
+										<span className="tabular-nums text-gray-500">{Math.round(u.progress * 100)}%</span>
+									)}
+								</div>
+								{u.error ? (
+									<p className="mt-1 text-red-600 dark:text-red-400">{u.error}</p>
+								) : (
+									<div className="mt-1.5 h-1 overflow-hidden rounded bg-gray-200 dark:bg-gray-700">
+										<div className="h-full bg-brand-600 transition-[width]" style={{ width: `${u.progress * 100}%` }} />
+									</div>
+								)}
+							</div>
+						))}
+					</div>
+				)}
+				{dropping && (
+					<div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-brand-500 bg-brand-500/5 text-sm font-medium text-brand-700 dark:text-brand-300">
+						Drop images, videos or PDFs to add them to the board
+					</div>
+				)}
+
+				{(session.timer || session.voting || showRanking) && (
+					<div data-ui className="absolute top-3 left-1/2 z-20 flex max-w-[calc(100%-120px)] -translate-x-1/2 flex-col items-center gap-2">
+						<TimerPill session={session.session} state={session} canControl={!readOnly} />
+						<VotingBanner
+							session={session.session}
+							state={session}
+							canControl={!readOnly}
+							onResults={() => setShowRanking(!showRanking)}
+							onSummary={() => openPanel('retro')}
+						/>
+						{showRanking && session.voting && !session.voting.active && (
+							<VoteRanking
+								state={session}
+								elements={elements}
+								onClose={() => setShowRanking(false)}
+								onPick={(id) => {
+									setSelection([id])
+									fit([id])
+								}}
+							/>
+						)}
+					</div>
+				)}
+				{composer &&
+					(() => {
+						const p = pinPoint(composer, elements)
+						return p ? (
+							<Composer
+								boardId={boardId}
+								anchor={composer}
+								at={toScreen(camera, p)}
+								viewport={size}
+								onCancel={() => setComposer(null)}
+								onDone={(id) => {
+									setComposer(null)
+									void comments.reload().then(() => setOpenThread(id))
+								}}
+							/>
+						) : null
+					})()}
+				{openThread !== null &&
+					(() => {
+						const thread = comments.threads.find((t) => t.id === openThread)
+						const p = thread && pinPoint(thread, elements)
+						return thread && p ? (
+							<ThreadPopover
+								boardId={boardId}
+								thread={thread}
+								at={toScreen(camera, p)}
+								viewport={size}
+								userId={user.id}
+								canModerate={!readOnly}
+								onChanged={() => void comments.reload()}
+								onClose={() => setOpenThread(null)}
+							/>
+						) : null
+					})()}
+				{!panel && (
+					<div data-ui className="absolute top-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-2">
+						<button
+							type="button"
+							onClick={() => setPanel('comments')}
+							title="Comments (C to add one)"
+							className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+						>
+							<MessageSquare size={16} /> <span className="hidden sm:inline">Comments</span>
+							{comments.threads.some((t) => !t.resolvedAt) && (
+								<span className="rounded-full bg-brand-600 px-1.5 text-xs text-white tabular-nums">
+									{comments.threads.filter((t) => !t.resolvedAt).length}
+								</span>
+							)}
+							<span className="sr-only sm:hidden">Comments</span>
+						</button>
+						<button
+							type="button"
+							onClick={() => setPanel('history')}
+							title="Version history"
+							className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+						>
+							<History size={16} /> <span className="hidden sm:inline">History</span>
+							<span className="sr-only sm:hidden">Version history</span>
+						</button>
+						<button
+							type="button"
+							onClick={() => setPanel('rules')}
+							className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+						>
+							<Zap size={16} /> Rules
+						</button>
+						{confluenceReady && !readOnly && (
+							<button
+								type="button"
+								onClick={() => setPublishing('')}
+								className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+							>
+								<BookOpenText size={16} /> Publish
+							</button>
+						)}
+						{sparkyReady && (
+							<button
+								type="button"
+								onClick={() => setShowCoverage(true)}
+								className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+							>
+								<FlaskConical size={16} /> Coverage
+							</button>
+						)}
+					</div>
+				)}
+				{panel === 'comments' && (
+					<CommentsPanel
+						threads={comments.threads}
+						elements={elements}
+						showResolved={showResolved}
+						onShowResolved={setShowResolved}
+						onNew={() => {
+							setTool('comment')
+							setPanel(null)
+						}}
+						onShow={(t) => {
+							const p = pinPoint(t, elements)
+							if (!p) return
+							setCamera((c) => ({ ...c, x: (size.w - 384) / 2 - p.x * c.zoom, y: size.h / 2 - p.y * c.zoom }))
+							setComposer(null)
+							setOpenThread(t.id)
+						}}
+						onClose={() => setPanel(null)}
+					/>
+				)}
+				{panel === 'history' && <HistoryPanel boardId={boardId} readOnly={readOnly} dark={dark} onClose={() => setPanel(null)} />}
+				{panel === 'rules' && (
+					<RulesPanel
+						boardId={boardId}
+						elements={elements}
+						readOnly={readOnly}
+						sparky={{ connected: sparkyReady, canWrite: canWriteSparky(sparky) }}
+						onShow={(id) => {
+							setSelection([id])
+							fit([id])
+						}}
+						onClose={() => setPanel(null)}
+					/>
+				)}
+				{generating !== null && sparky && (
+					<GenerateTestsDialog
+						boardId={boardId}
+						boardName={boardName}
+						elements={elements}
+						store={store}
+						info={sparky}
+						initialFrameId={generating || null}
+						onClose={() => setGenerating(null)}
+					/>
+				)}
+				{panel === 'retro' && (
+					<RetroPanel
+						store={store}
+						elements={elements}
+						boardId={boardId}
+						votes={session.counts}
+						voters={session.voters}
+						readOnly={readOnly}
+						canPublish={confluenceReady && !readOnly}
+						onPublish={(scopeId, sections) => {
+							setPublishSummary(sections)
+							setPublishing(scopeId)
+						}}
+						onShow={(id) => {
+							setSelection([id])
+							fit([id])
+						}}
+						onClose={() => setPanel(null)}
+					/>
+				)}
+				{publishing !== null && confluence && (
+					<PublishDialog
+						boardId={boardId}
+						boardName={boardName}
+						projectId={projectId}
+						elements={elements}
+						confluence={confluence}
+						withCoverage={sparkyReady}
+						initialFrameId={publishing || null}
+						summary={publishSummary}
+						onClose={() => {
+							setPublishing(null)
+							setPublishSummary(null)
+						}}
+					/>
+				)}
+				{sparkyReady && showCoverage && (
+					<CoveragePanel
+						projectId={projectId}
+						info={sparky!}
+						elements={elements}
+						boardName={boardName}
+						onGenerate={readOnly ? undefined : (frameId) => setGenerating(frameId ?? '')}
+						onClose={() => setShowCoverage(false)}
+						onShow={(id) => {
+							setSelection([id])
+							fit([id])
+						}}
+					/>
+				)}
+				{showTemplates && (
+					<TemplatePicker
+						onClose={() => setShowTemplates(false)}
+						onPick={(template) => {
+							setShowTemplates(false)
+							insertTemplate(template)
+						}}
+					/>
+				)}
+
+				{elements.size === 0 && !readOnly && (
+					<div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-gray-500">
+						Pick a tool on the left to add sticky notes, shapes, text and connectors.
+						<br />
+						Double-click the board to write.
+					</div>
+				)}
+
+				{!readOnly && (
+					<Toolbar
+						tool={tool}
+						shapeKind={shapeKind}
+						onTool={setTool}
+						onShape={(kind) => {
+							setShapeKind(kind)
+							setTool('shape')
+						}}
+						onUndo={() => store.undo.undo()}
+						onRedo={() => store.undo.redo()}
+						onFiles={(files) => insertFiles(files, viewCenter())}
+						onLink={(url) => {
+							const pageId = confluencePageId(url, confluence)
+							if (pageId) {
+								void insertConfluence(pageId, viewCenter())
+								return null
+							}
+							const media = parseMediaUrl(url)
+							if (!media) return 'Paste a web address starting with http:// or https://'
+							insertMedia([media], viewCenter())
+							return null
+						}}
+						onTemplates={() => setShowTemplates(true)}
+						confluence={
+							confluenceReady
+								? {
+										search: (q) => searchConfluence(projectId, q),
+										onPick: (page) => void insertConfluence(page.id, viewCenter(), page.title),
+									}
+								: undefined
+						}
+						facilitation={
+							<FacilitationMenu session={session.session} state={session} userName={user.displayName} onRetro={() => openPanel('retro')} />
+						}
+					/>
+				)}
+				<ZoomControls
+					zoom={camera.zoom}
+					onZoom={(f) => zoomBy(f)}
+					onReset={() => setCamera((c) => zoomAt(c, { x: size.w / 2, y: size.h / 2 }, 1))}
+					onFit={() => fit()}
+				>
 					<button
 						type="button"
-						onClick={() => setPanel('rules')}
-						className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+						aria-pressed={gridOn}
+						title={gridOn ? 'Snapping to the grid (Alt while dragging moves freely)' : 'Snap to the grid'}
+						onClick={() => {
+							writeFlag('co-bord:grid', !gridOn)
+							setGridOn(!gridOn)
+						}}
+						className={`flex size-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 ${gridOn ? 'bg-gray-100 text-brand-600 dark:bg-gray-800 dark:text-brand-300' : 'text-gray-700 dark:text-gray-200'}`}
 					>
-						<Zap size={16} /> Rules
+						<Grid3x3 size={16} />
+						<span className="sr-only">Snap to the grid</span>
 					</button>
-					{confluenceReady && !readOnly && (
-						<button
-							type="button"
-							onClick={() => setPublishing('')}
-							className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-						>
-							<BookOpenText size={16} /> Publish
-						</button>
-					)}
-					{sparkyReady && (
-						<button
-							type="button"
-							onClick={() => setShowCoverage(true)}
-							className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-						>
-							<FlaskConical size={16} /> Coverage
-						</button>
-					)}
-				</div>
-			)}
-			{panel === 'rules' && (
-				<RulesPanel
-					boardId={boardId}
-					elements={elements}
-					readOnly={readOnly}
-					sparky={{ connected: sparkyReady, canWrite: canWriteSparky(sparky) }}
-					onShow={(id) => {
-						setSelection([id])
-						fit([id])
-					}}
-					onClose={() => setPanel(null)}
-				/>
-			)}
-			{generating !== null && sparky && (
-				<GenerateTestsDialog
-					boardId={boardId}
-					boardName={boardName}
-					elements={elements}
-					store={store}
-					info={sparky}
-					initialFrameId={generating || null}
-					onClose={() => setGenerating(null)}
-				/>
-			)}
-			{panel === 'retro' && (
-				<RetroPanel
-					store={store}
-					elements={elements}
-					boardId={boardId}
-					votes={session.counts}
-					voters={session.voters}
-					readOnly={readOnly}
-					canPublish={confluenceReady && !readOnly}
-					onPublish={(scopeId, sections) => {
-						setPublishSummary(sections)
-						setPublishing(scopeId)
-					}}
-					onShow={(id) => {
-						setSelection([id])
-						fit([id])
-					}}
-					onClose={() => setPanel(null)}
-				/>
-			)}
-			{publishing !== null && confluence && (
-				<PublishDialog
-					boardId={boardId}
-					boardName={boardName}
-					projectId={projectId}
-					elements={elements}
-					confluence={confluence}
-					withCoverage={sparkyReady}
-					initialFrameId={publishing || null}
-					summary={publishSummary}
-					onClose={() => {
-						setPublishing(null)
-						setPublishSummary(null)
-					}}
-				/>
-			)}
-			{sparkyReady && showCoverage && (
-				<CoveragePanel
-					projectId={projectId}
-					info={sparky!}
-					elements={elements}
-					boardName={boardName}
-					onGenerate={readOnly ? undefined : (frameId) => setGenerating(frameId ?? '')}
-					onClose={() => setShowCoverage(false)}
-					onShow={(id) => {
-						setSelection([id])
-						fit([id])
-					}}
-				/>
-			)}
-			{showTemplates && (
-				<TemplatePicker
-					onClose={() => setShowTemplates(false)}
-					onPick={(template) => {
-						setShowTemplates(false)
-						insertTemplate(template)
-					}}
-				/>
-			)}
-
-			{elements.size === 0 && !readOnly && (
-				<div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-gray-500">
-					Pick a tool on the left to add sticky notes, shapes, text and connectors.
-					<br />
-					Double-click the board to write.
-				</div>
-			)}
-
-			{!readOnly && (
-				<Toolbar
-					tool={tool}
-					shapeKind={shapeKind}
-					onTool={setTool}
-					onShape={(kind) => {
-						setShapeKind(kind)
-						setTool('shape')
-					}}
-					onUndo={() => store.undo.undo()}
-					onRedo={() => store.undo.redo()}
-					onFiles={(files) => insertFiles(files, viewCenter())}
-					onLink={(url) => {
-						const pageId = confluencePageId(url, confluence)
-						if (pageId) {
-							void insertConfluence(pageId, viewCenter())
-							return null
+					<button
+						type="button"
+						aria-pressed={minimapOn}
+						title={minimapOn ? 'Hide the minimap' : 'Show the minimap'}
+						onClick={() => {
+							writeFlag('co-bord:minimap', !minimapOn)
+							setMinimapOn(!minimapOn)
+						}}
+						className={`flex size-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 ${minimapOn ? 'bg-gray-100 text-brand-600 dark:bg-gray-800 dark:text-brand-300' : 'text-gray-700 dark:text-gray-200'}`}
+					>
+						<MapIcon size={16} />
+						<span className="sr-only">Minimap</span>
+					</button>
+					<FramesMenu
+						frames={frames}
+						onPick={(id) => {
+							setSelection([id])
+							fit([id])
+						}}
+					/>
+				</ZoomControls>
+				{minimapOn && elements.size > 0 && (
+					<Minimap
+						elements={elements}
+						camera={camera}
+						viewport={size}
+						peers={peers}
+						dark={dark}
+						onMove={(p) => setCamera((c) => ({ ...c, x: size.w / 2 - p.x * c.zoom, y: size.h / 2 - p.y * c.zoom }))}
+					/>
+				)}
+				{!readOnly && selectedEls.length > 0 && selectionBounds && !d && editing === null && (
+					<ContextToolbar
+						store={store}
+						selected={selectedEls}
+						anchor={screenRect(selectionBounds)}
+						viewport={size}
+						onDelete={deleteSelection}
+						onDuplicate={duplicate}
+						onEditText={() => single && startEditing(single.id)}
+						onWrapInFrame={wrapInFrame}
+						onExportFrame={exportFrame}
+						onPublishFrame={confluenceReady ? (id) => setPublishing(id) : undefined}
+						onGenerateTests={sparkyReady ? (id) => setGenerating(id) : undefined}
+						onCreateIssue={
+							jiraReady
+								? (id) => api(`/api/boards/${boardId}/elements/${encodeURIComponent(id)}/jira`, { method: 'POST' }).then(() => undefined)
+								: undefined
 						}
-						const media = parseMediaUrl(url)
-						if (!media) return 'Paste a web address starting with http:// or https://'
-						insertMedia([media], viewCenter())
-						return null
-					}}
-					onTemplates={() => setShowTemplates(true)}
-					confluence={
-						confluenceReady
-							? {
-									search: (q) => searchConfluence(projectId, q),
-									onPick: (page) => void insertConfluence(page.id, viewCenter(), page.title),
-								}
-							: undefined
-					}
-					facilitation={
-						<FacilitationMenu session={session.session} state={session} userName={user.displayName} onRetro={() => openPanel('retro')} />
-					}
-				/>
-			)}
-			<ZoomControls
-				zoom={camera.zoom}
-				onZoom={(f) => zoomBy(f)}
-				onReset={() => setCamera((c) => zoomAt(c, { x: size.w / 2, y: size.h / 2 }, 1))}
-				onFit={() => fit()}
-			>
-				<button
-					type="button"
-					aria-pressed={gridOn}
-					title={gridOn ? 'Snapping to the grid (Alt while dragging moves freely)' : 'Snap to the grid'}
-					onClick={() => {
-						writeFlag('co-bord:grid', !gridOn)
-						setGridOn(!gridOn)
-					}}
-					className={`flex size-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 ${gridOn ? 'bg-gray-100 text-brand-600 dark:bg-gray-800 dark:text-brand-300' : 'text-gray-700 dark:text-gray-200'}`}
-				>
-					<Grid3x3 size={16} />
-					<span className="sr-only">Snap to the grid</span>
-				</button>
-				<button
-					type="button"
-					aria-pressed={minimapOn}
-					title={minimapOn ? 'Hide the minimap' : 'Show the minimap'}
-					onClick={() => {
-						writeFlag('co-bord:minimap', !minimapOn)
-						setMinimapOn(!minimapOn)
-					}}
-					className={`flex size-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 ${minimapOn ? 'bg-gray-100 text-brand-600 dark:bg-gray-800 dark:text-brand-300' : 'text-gray-700 dark:text-gray-200'}`}
-				>
-					<MapIcon size={16} />
-					<span className="sr-only">Minimap</span>
-				</button>
-				<FramesMenu
-					frames={frames}
-					onPick={(id) => {
-						setSelection([id])
-						fit([id])
-					}}
-				/>
-			</ZoomControls>
-			{minimapOn && elements.size > 0 && (
-				<Minimap
-					elements={elements}
-					camera={camera}
-					viewport={size}
-					peers={peers}
-					dark={dark}
-					onMove={(p) => setCamera((c) => ({ ...c, x: size.w / 2 - p.x * c.zoom, y: size.h / 2 - p.y * c.zoom }))}
-				/>
-			)}
-			{!readOnly && selectedEls.length > 0 && selectionBounds && !d && editing === null && (
-				<ContextToolbar
-					store={store}
-					selected={selectedEls}
-					anchor={screenRect(selectionBounds)}
-					viewport={size}
-					onDelete={deleteSelection}
-					onDuplicate={duplicate}
-					onEditText={() => single && startEditing(single.id)}
-					onWrapInFrame={wrapInFrame}
-					onExportFrame={exportFrame}
-					onPublishFrame={confluenceReady ? (id) => setPublishing(id) : undefined}
-					onGenerateTests={sparkyReady ? (id) => setGenerating(id) : undefined}
-					onCreateIssue={
-						jiraReady
-							? (id) => api(`/api/boards/${boardId}/elements/${encodeURIComponent(id)}/jira`, { method: 'POST' }).then(() => undefined)
-							: undefined
-					}
-					following={single ? follows.elements.has(single.id) : false}
-					onToggleFollow={single && single.type !== 'connector' ? () => follows.toggleElement(single.id) : undefined}
-					linkEditor={
-						sparkyReady
-							? (el) => (
-									<LinkEditor
-										projectId={projectId}
-										links={'links' in el ? (el.links ?? []) : []}
-										onChange={(links) => {
-											store.checkpoint()
-											store.update([[el.id, { links }]])
-											store.checkpoint()
-										}}
-									/>
-								)
-							: undefined
-					}
-				/>
-			)}
-		</div>
+						following={single ? follows.elements.has(single.id) : false}
+						onToggleFollow={single && single.type !== 'connector' ? () => follows.toggleElement(single.id) : undefined}
+						linkEditor={
+							sparkyReady
+								? (el) => (
+										<LinkEditor
+											projectId={projectId}
+											links={'links' in el ? (el.links ?? []) : []}
+											onChange={(links) => {
+												store.checkpoint()
+												store.update([[el.id, { links }]])
+												store.checkpoint()
+											}}
+										/>
+									)
+								: undefined
+						}
+					/>
+				)}
+			</div>
+		</MediaSyncContext.Provider>
 	)
 }
 

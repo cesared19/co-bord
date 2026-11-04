@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.9.0)
+## Features (0.10.0)
 
 ### Boards
 
@@ -81,6 +81,12 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  The **summary** comes from the board: notes and votes per column, the groups and the most voted notes, and the action items. With `ANTHROPIC_API_KEY` set, **Write with Claude** also drafts a summary with themes and suggested actions (the notes and votes are sent to Anthropic's API).
 -  Copy the summary as text, **add it to the board** in its own frame, or **publish** it to Confluence with the retro's picture.
 
+### Comments and version history
+
+-  **Comments** (the Comment tool, C, or **Comments** at the top right, viewers too): click an item to comment on it, the pin moves with it, or an empty spot of the board. Threads have replies, `@mentions` that notify, and **Resolve** / **Reopen**; replying to a resolved thread opens it again. Authors edit and delete their comments; editors can delete any. The panel lists open and resolved threads; click one to go to it. Mentions and replies to your threads show up in the bell.
+-  **Version history** (**History** at the top right): a version is saved automatically every 10 minutes while people edit (kept 30 days), and editors save named versions (kept). Click one to see it; editors restore it for everyone, after the board as it is is saved as a version too, or name it to keep it.
+-  **Synced videos and PDFs**: **Sync** on an uploaded video, a YouTube or Vimeo video, or a PDF makes playing, pausing, jumping and turning pages the same for everyone looking at it, until it's turned off. If the browser blocks playing, a click joins in.
+
 ### Real time
 
 -  Everyone on a board sees the others' changes as they happen, their cursors with their names, what each one has selected and who is typing where.
@@ -119,7 +125,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 4. ~~Templates: retrospectives (columns, votes, timer), workflows and design documents; frames~~ (0.3.0)
 5. ~~Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage~~ (0.4.0); ~~Confluence pages embedded as blocks, and boards published to Confluence~~ (0.5.0)
 6. ~~Automations: guided retrospectives and notifications~~ (0.6.0); ~~card rules and generating SparkyTC test cases from a flow~~ (0.7.0)
-7. ~~Alignment guides, grid, rotation, resizing several elements and a minimap~~ (0.9.0); then comments, version history and synced video and PDF pages
+7. ~~Alignment guides, grid, rotation, resizing several elements and a minimap~~ (0.9.0); ~~comments, version history and synced videos and PDF pages~~ (0.10.0)
 
 ## Running it
 

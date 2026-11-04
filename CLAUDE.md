@@ -1,6 +1,6 @@
 # co-bord
 
-Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.8.0 está en `main`; 0.9.0 (guías, cuadrícula, rotación, redimensionar varios, minimapa) en desarrollo.
+Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.9.0 está en `main`; 0.10.0 (comentarios, historial de versiones, videos y PDF sincronizados) en desarrollo.
 
 **Repositorio:** https://github.com/cesared19/co-bord.
 
@@ -9,7 +9,7 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
 ## Arquitectura
 
 - **Servidor** (`server/`): Node 22 + TypeScript (ESM), Fastify 5, PostgreSQL con `pg`. Un solo proceso sirve la API (`/api/*`), el WebSocket de colaboración (`/collab`) y el cliente compilado (`CLIENT_DIR`, con fallback a `index.html`).
-- **Migraciones:** lista `migrations` en `server/src/db.ts` (versión actual 0.0.7), tabla `schema_migrations`, con `pg_advisory_lock`. Nunca editar una migración publicada: agregar una nueva al final.
+- **Migraciones:** lista `migrations` en `server/src/db.ts` (versión actual 0.0.8), tabla `schema_migrations`, con `pg_advisory_lock`. Nunca editar una migración publicada: agregar una nueva al final.
 - **Colaboración:** cada tablero es un documento Yjs (nombre = id del tablero, UUID) sincronizado con Hocuspocus 4 (`server/src/collab.ts`, puente entre `@fastify/websocket` y `handleConnection`). Se guarda completo en `boards.document` (debounce 1.5 s, máx. 10 s) y al cerrar. La autenticación usa la cookie de sesión del handshake y rechaza otros orígenes. Los viewers se conectan en solo lectura (`connectionConfig.readOnly`).
 - **Cliente** (`client/`): React 19, React Router 7 (modo librería, `BrowserRouter`), Tailwind 4 (variables `--color-brand-*` en `src/index.css`, modo oscuro con la clase `.dark`), Vite 7. Llamadas con `api()` (`src/lib/api.ts`), sesión en `AuthProvider` (`src/lib/auth.tsx`).
 - **Lienzo propio** (`client/src/board`):
@@ -20,6 +20,9 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
   - Ajuste (`snap.ts`): al mover, `snapMove` alinea los límites de lo movido con bordes y centros de los elementos cercanos (`snapTargets`, hasta 400 alrededor de la vista) o con espaciado igual entre vecinos de la misma fila/columna; si no hay guía en un eje y la cuadrícula está activa (`GRID` = 20, botón junto al zoom, `localStorage` `co-bord:grid`), a la cuadrícula. Al redimensionar sin rotación, `snapEdges` ajusta los bordes que se mueven. Umbral `SNAP_PX` = 6 px de pantalla; Alt desactiva todo. Guías en `SnapOverlay`.
   - Rotación: `rotation` en grados en cajas (no marcos). `geometry.ts`: `rotationOf`, `rotatePoint`, `boxCorners`, `containsRotated`; `elementBounds` da el rectángulo que contiene lo rotado; `sidePoint` y `outlinePoint` giran con el elemento y los codos de los conectores salen por el eje más cercano. Se dibuja con `transform: rotate` en `BoxView`/`MediaView` y con `place()` en `exportPng.ts`. El tirador está fuera de la esquina superior derecha (no tapa los + ni la barra); el giro es relativo a donde se tomó, Shift en pasos de 15°, se pega a múltiplos de 90° a menos de 4°. Redimensionar algo rotado se calcula en su marco local.
   - Varios a la vez: con más de un elemento, tiradores `scale:*` en los límites de la selección; escala posiciones, tamaños y `fontSize` (por el menor factor), los conectores sueltos mueven sus extremos.
+  - Comentarios (`Comments.tsx`, `routes/comments.ts`): `comment_threads` (en un elemento con x, y desde su esquina, o en un punto) y `comments`; cualquiera que abre el tablero comenta (viewers incluidos), autores editan, autores y editores borran (borrar el primero borra el hilo), resolver/reabrir (responder reabre). Menciones y respuestas notifican (`kind = 'comment'`, `element_id = 'comment:<id>'`, que `?el=` abre). Al cambiar, el servidor manda `comments` por `broadcastStateless` (`ctx.broadcastBoard`) y los clientes recargan. Herramienta Comment (C, también para viewers), pines en pantalla (`pinPoint` gira con el elemento), `Composer`, `ThreadPopover`, `CommentsPanel`.
+  - Historial (`HistoryPanel.tsx`, `routes/versions.ts`): `board_versions` guarda el documento completo; `save()` en collab.ts agrega una automática si la última tiene más de 10 min (`versionEveryMs`), solo con ediciones de personas; las automáticas se borran a los 30 días (housekeeping). Con nombre, renombrar (deja de ser automática), borrar y restaurar son de editores; restaurar guarda antes el estado actual ("Before restoring …") y reemplaza `elements` por conexión directa (`ctx.restoreBoard`, origen `local` sin `ruleDepth`: no dispara reglas ni notificaciones). La vista previa dibuja la versión con `renderPng` en el navegador.
+  - Medios sincronizados (`mediaSync.ts`, `SyncedPlayers.tsx`): `Y.Map('media')` por elemento con `sync`, `playing`, `time`, `at` (hora del servidor) y `page`, fuera del deshacer; solo editores lo cambian. Video subido con `<video>`; YouTube con la API de mensajes del widget (`enablejsapi=1`) y Vimeo con su API de `postMessage`, sin scripts externos; PDF con la página compartida. Los eventos que ya coinciden con el estado compartido no se vuelven a publicar (evita el eco); deriva corregida cada 5 s; si el navegador bloquea reproducir, aparece "Click to watch along". YouTube y Vimeo no se probaron contra los servicios reales.
   - Minimapa (`Minimap.tsx`): canvas 200×132 abajo a la derecha, con el botón junto al zoom (`co-bord:minimap`, por defecto visible desde 768 px).
   - `useBoardDoc.ts`: el proveedor se crea en un efecto (`useBoardConnection`), no en render.
   - Marcos (`FrameView`): el área deja pasar los clics al tablero; se eligen y arrastran por el título (tamaño fijo en pantalla hasta 60 % de zoom). Mover, copiar, duplicar y empujar con flechas incluye lo que está completamente dentro (`withFrameContents`). La selección por recuadro solo toma un marco si lo cubre entero. Los conectores no se enganchan a marcos.
@@ -54,7 +57,7 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
 ## Cómo trabajar
 
 - **Antes de hacer push:**
-  - Servidor: `cd server && npx tsc --noEmit -p . && npm test` (Vitest + Testcontainers con Postgres real; hoy son 25 tests, incluidos los de robustez (bloqueo de inicio de sesión, acceso en vivo, copia y limpieza de archivos), los de reglas con Jira y SparkyTC simulados, uno de sincronización con dos clientes, uno de archivos, los de notificaciones con clientes Yjs reales y los de SparkyTC, Confluence y Anthropic con servidores simulados).
+  - Servidor: `cd server && npx tsc --noEmit -p . && npm test` (Vitest + Testcontainers con Postgres real; hoy son 27 tests, incluidos los de comentarios y versiones con clientes Yjs reales, los de robustez (bloqueo de inicio de sesión, acceso en vivo, copia y limpieza de archivos), los de reglas con Jira y SparkyTC simulados, uno de sincronización con dos clientes, uno de archivos, los de notificaciones con clientes Yjs reales y los de SparkyTC, Confluence y Anthropic con servidores simulados).
   - Cliente: `cd client && npx tsc -b && npm run lint && npm run build`. El lint debe quedar en 0 problemas.
 - **Si Testcontainers no encuentra Docker:** inicia dockerd con `DOCKER_MIN_API_VERSION=1.24`. Si Docker Hub responde 429, baja la imagen de `mirror.gcr.io/library/...` y etiquétala con el nombre original.
 - **Cambios de interfaz:** pruébalos de punta a punta con Playwright contra el build de producción servido por el servidor (`CLIENT_DIR=../client/dist`), con dos usuarios a la vez para lo colaborativo, en modo oscuro y a 390 px y 820 px.
@@ -71,10 +74,10 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
 4. Plantillas: retrospectiva (columnas, votos, temporizador), workflow, documento de diseño; marcos (frames)
 5. ~~SparkyTC (token por proyecto, bloques vinculados a casos/suites/planes con su último resultado, reporte de cobertura)~~ (0.4.0) ~~y Confluence (embeber y publicar)~~ (0.5.0)
 6. ~~Automatizaciones: notificaciones y retro guiada~~ (0.6.0); ~~reglas de tarjetas y generar pruebas~~ (0.7.0, con SparkyTC 2.3.0)
-7. Lienzo: ~~guías, cuadrícula, rotación, redimensionar varios y minimapa~~ (0.9.0); comentarios, historial de versiones y sincronizar videos y PDF (0.10.0)
+7. ~~Lienzo: guías, cuadrícula, rotación, redimensionar varios y minimapa~~ (0.9.0); ~~comentarios, historial de versiones y sincronizar videos y PDF~~ (0.10.0)
 
 ## Pendientes conocidos
 
 - Confluence y Jira: no se probaron contra Confluence Cloud ni Jira Cloud reales desde el entorno de desarrollo (sin acceso); verificar al conectarlos por primera vez.
-- Más adelante: HTTPS (sin dominio por ahora), comentarios en el tablero, historial de versiones del tablero.
-- La reproducción de videos y la página de los PDF no se sincronizan entre usuarios.
+- Más adelante: HTTPS (sin dominio por ahora).
+- La sincronización de YouTube y Vimeo no se probó contra los servicios reales (sin acceso desde el entorno de desarrollo); verificar al usarla.

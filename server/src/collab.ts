@@ -68,6 +68,14 @@ export function createCollab(ctx: Ctx) {
 			state,
 			userId,
 		])
+		// an automatic version every 10 minutes while people edit
+		if (userId)
+			await db.query(
+				`INSERT INTO board_versions (board_id, auto, document, created_by)
+				SELECT $1, TRUE, $2, $3 WHERE EXISTS (SELECT 1 FROM boards WHERE id = $1) AND NOT EXISTS (
+					SELECT 1 FROM board_versions WHERE board_id = $1 AND auto AND created_at > now() - $4 * interval '1 millisecond')`,
+				[boardId, state, userId, ctx.config.versionEveryMs ?? 10 * 60 * 1000],
+			)
 	}
 
 	/** Rules change boards through direct connections, so everyone sees the change and it's saved like any other. */
@@ -101,6 +109,7 @@ export function createCollab(ctx: Ctx) {
 			const { deleted } = await ctx.cleanupAssets!()
 			if (deleted) console.log(`Deleted ${deleted} uploaded files no board used`)
 			await pruneLocks(db)
+			await db.query(`DELETE FROM board_versions WHERE auto AND created_at < now() - interval '30 days'`)
 		} catch (e) {
 			console.error('Housekeeping failed', e)
 		}
@@ -119,6 +128,24 @@ export function createCollab(ctx: Ctx) {
 			for (const connection of document.getConnections())
 				if ((connection.context as CollabContext | undefined)?.user?.id === userId) connection.close(ACCESS_CHANGED)
 		})
+	}
+
+	ctx.broadcastBoard = (boardId, message) => hocuspocus.documents.get(boardId)?.broadcastStateless(message)
+	ctx.restoreBoard = async (boardId, version, userId) => {
+		const from = version.getMap('elements')
+		const connection = await hocuspocus.openDirectConnection(boardId, { restoredBy: userId } as unknown as CollabContext)
+		try {
+			await connection.transact((doc) => {
+				const elements = doc.getMap('elements')
+				for (const id of [...elements.keys()]) if (!from.has(id)) elements.delete(id)
+				from.forEach((value, id) => {
+					if (JSON.stringify(elements.get(id)) !== JSON.stringify(value)) elements.set(id, value)
+				})
+			})
+		} finally {
+			await connection.disconnect()
+		}
+		await db.query('UPDATE boards SET updated_by = $2 WHERE id = $1', [boardId, userId])
 	}
 
 	ctx.onBoardDeleted = (boardId) => hocuspocus.closeConnections(boardId)
