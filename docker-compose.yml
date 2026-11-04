@@ -25,6 +25,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PUBLIC_URL: ${PUBLIC_URL:-}
       RULE_CHECK_SECONDS: ${RULE_CHECK_SECONDS:-120}
+      UNUSED_FILES_DAYS: ${UNUSED_FILES_DAYS:-30}
     volumes:
       - app-data:/data
     ports:

@@ -104,6 +104,7 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx) {
 			ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
 			[id, userId, role],
 		)
+		await ctx.onAccessChanged?.(userId, id)
 		return { ok: true }
 	})
 
@@ -116,6 +117,7 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx) {
 		if (userId !== user.id && !atLeast(role, 'owner')) throw notFound('Project not found')
 		await ensureAnotherOwner(id, userId)
 		await db.query('DELETE FROM project_members WHERE project_id = $1 AND user_id = $2', [id, userId])
+		await ctx.onAccessChanged?.(userId, id)
 		return { ok: true }
 	})
 

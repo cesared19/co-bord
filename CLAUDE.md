@@ -1,6 +1,6 @@
 # co-bord
 
-Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.7.0 está en `main`; 0.7.1 (mensajes claros cuando no se llega a SparkyTC, Confluence o Jira) en desarrollo.
+Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.7.1 está en `main`; 0.8.0 (robustez: acceso en vivo, límite de inicio de sesión, archivos) en desarrollo.
 
 **Repositorio:** https://github.com/cesared19/co-bord.
 
@@ -9,7 +9,7 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
 ## Arquitectura
 
 - **Servidor** (`server/`): Node 22 + TypeScript (ESM), Fastify 5, PostgreSQL con `pg`. Un solo proceso sirve la API (`/api/*`), el WebSocket de colaboración (`/collab`) y el cliente compilado (`CLIENT_DIR`, con fallback a `index.html`).
-- **Migraciones:** lista `migrations` en `server/src/db.ts` (versión actual 0.0.6), tabla `schema_migrations`, con `pg_advisory_lock`. Nunca editar una migración publicada: agregar una nueva al final.
+- **Migraciones:** lista `migrations` en `server/src/db.ts` (versión actual 0.0.7), tabla `schema_migrations`, con `pg_advisory_lock`. Nunca editar una migración publicada: agregar una nueva al final.
 - **Colaboración:** cada tablero es un documento Yjs (nombre = id del tablero, UUID) sincronizado con Hocuspocus 4 (`server/src/collab.ts`, puente entre `@fastify/websocket` y `handleConnection`). Se guarda completo en `boards.document` (debounce 1.5 s, máx. 10 s) y al cerrar. La autenticación usa la cookie de sesión del handshake y rechaza otros orígenes. Los viewers se conectan en solo lectura (`connectionConfig.readOnly`).
 - **Cliente** (`client/`): React 19, React Router 7 (modo librería, `BrowserRouter`), Tailwind 4 (variables `--color-brand-*` en `src/index.css`, modo oscuro con la clase `.dark`), Vite 7. Llamadas con `api()` (`src/lib/api.ts`), sesión en `AuthProvider` (`src/lib/auth.tsx`).
 - **Lienzo propio** (`client/src/board`):
@@ -30,6 +30,9 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
   - Facilitación (`session.ts`, `Facilitation.tsx`): `Y.Map('session')` con `timer` y `voting`, y `Y.Map('votes')` con una clave por ronda y usuario (`${round}:${userId}`), así cada uno escribe solo la suya. Fuera del deshacer. El temporizador usa la hora del servidor (`serverNow`, desfase medido con `/api/health`). Mientras hay votación, el clic en un elemento vota en lugar de seleccionar.
   - `exportPng.ts`: dibuja el tablero en canvas (no usa foreignObject). Imágenes externas solo si permiten CORS; PDF subidos con su primera página; videos como tarjeta.
   - Embeds (`media.ts`, `MediaView.tsx`, `pdf.ts`, `upload.ts`): `media` con `kind` image, video, pdf, youtube, drive, vimeo o link. Las subidas guardan `assetId`; YouTube/Drive/Vimeo guardan solo el id y el iframe se arma con él (nunca un iframe con URL arbitraria); los enlaces pasan por `safeUrl` (solo http(s) o `/api/assets/`). Mientras no está seleccionado, el contenido tiene `pointer-events: none` (el clic selecciona); seleccionado, el contenido lleva `data-interactive` y el lienzo no captura el puntero ahí; se arrastra por la barra de título. pdf.js se carga bajo demanda (chunk aparte, worker con `?url`). Al insertar sin posición exacta se busca espacio libre (`freeSpot`).
+- **Acceso en vivo:** `ctx.onAccessChanged(userId, projectId?)` (collab.ts) cierra las conexiones de ese usuario a los tableros del proyecto (o a todos) con el motivo `Access changed`; se llama al cambiar el rol, quitar a alguien, cambiar `is_admin`, restablecer la contraseña o borrar al usuario. Hocuspocus 4 cierra solo el documento (mensaje CLOSE con el motivo, el socket sigue) y el proveedor no reconecta solo: `BoardPage` escucha `close`, vuelve a leer el tablero y recrea la conexión (`generation`), que se autentica con el rol nuevo o es rechazada.
+- **Inicio de sesión:** `loginLimit.ts`, tabla `login_locks` por `user:<username>` e `ip:<ip>`: 5 fallos en 15 min bloquean 15 min (429 con los minutos que faltan); un acierto borra ambos; desbloquear a un usuario (`DELETE /api/users/:id/lock`, botón en Users) borra también la IP de su último fallo (`last_ip`).
+- **Archivos:** pegar elementos con `assetId` de otro proyecto llama a `POST /api/boards/:id/assets/copy`, que copia el archivo al proyecto de destino si el usuario puede leer el original. `cleanup.ts`: una vez al día (y al minuto de arrancar) se recorren todos los tableros (los abiertos en memoria) buscando `assetId` y direcciones `/api/assets/`; los archivos sin uso reciben `assets.unused_since` y se borran a los `UNUSED_FILES_DAYS` (30); si vuelven a usarse se desmarcan. También limpia `login_locks` viejos.
 - **Errores de red:** `server/src/net.ts` (`unreachable`) traduce el código del error de `fetch` (ENOTFOUND, ECONNREFUSED, tiempo agotado, certificado) en un mensaje con la causa; para SparkyTC agrega cómo unirse a su red de Docker (`SPARKY_DOCKER_HINT`).
 - **Deploy:** `Dockerfile` (multi-stage, una imagen) + `docker-compose.yml` (Postgres 16 + app en `APP_PORT`, 3200 por defecto; en el servidor ya están SparkyTC en 3000 y 8080 y ProDash en 3100). Sin HTTPS todavía; `COOKIE_SECURE=true` cuando lo haya. `crypto.randomUUID` no existe sin HTTPS: usar `newId()` (`src/lib/id.ts`).
 
@@ -47,7 +50,7 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
 ## Cómo trabajar
 
 - **Antes de hacer push:**
-  - Servidor: `cd server && npx tsc --noEmit -p . && npm test` (Vitest + Testcontainers con Postgres real; hoy son 21 tests, incluidos los de reglas con Jira y SparkyTC simulados, uno de sincronización con dos clientes, uno de archivos, los de notificaciones con clientes Yjs reales y los de SparkyTC, Confluence y Anthropic con servidores simulados).
+  - Servidor: `cd server && npx tsc --noEmit -p . && npm test` (Vitest + Testcontainers con Postgres real; hoy son 25 tests, incluidos los de robustez (bloqueo de inicio de sesión, acceso en vivo, copia y limpieza de archivos), los de reglas con Jira y SparkyTC simulados, uno de sincronización con dos clientes, uno de archivos, los de notificaciones con clientes Yjs reales y los de SparkyTC, Confluence y Anthropic con servidores simulados).
   - Cliente: `cd client && npx tsc -b && npm run lint && npm run build`. El lint debe quedar en 0 problemas.
 - **Si Testcontainers no encuentra Docker:** inicia dockerd con `DOCKER_MIN_API_VERSION=1.24`. Si Docker Hub responde 429, baja la imagen de `mirror.gcr.io/library/...` y etiquétala con el nombre original.
 - **Cambios de interfaz:** pruébalos de punta a punta con Playwright contra el build de producción servido por el servidor (`CLIENT_DIR=../client/dist`), con dos usuarios a la vez para lo colaborativo, en modo oscuro y a 390 px y 820 px.
@@ -68,8 +71,5 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
 ## Pendientes conocidos
 
 - Confluence y Jira: no se probaron contra Confluence Cloud ni Jira Cloud reales desde el entorno de desarrollo (sin acceso); verificar al conectarlos por primera vez.
-- Más adelante: HTTPS, límite de intentos de inicio de sesión, ajuste a la cuadrícula y guías de alineación, minimapa, comentarios en el tablero, historial de versiones del tablero, redimensionar varios elementos a la vez, rotación.
-- Un usuario quitado de un proyecto sigue conectado al tablero abierto hasta que recarga.
-- Los archivos subidos que ya no usa ningún tablero no se borran (deshacer puede necesitarlos): falta una limpieza periódica.
-- Pegar un elemento con archivo subido en un tablero de otro proyecto no funciona para quien no es miembro del proyecto original.
+- Más adelante: HTTPS (sin dominio por ahora), ajuste a la cuadrícula y guías de alineación, minimapa, comentarios en el tablero, historial de versiones del tablero, redimensionar varios elementos a la vez, rotación.
 - La reproducción de videos y la página de los PDF no se sincronizan entre usuarios.

@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, rename, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, rename, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -44,6 +44,12 @@ export class FileStorage {
 		} catch {
 			return null
 		}
+	}
+
+	async copy(from: string, to: string) {
+		const tmp = join(this.root, 'tmp', to)
+		await copyFile(this.path(from), tmp)
+		await rename(tmp, this.path(to))
 	}
 
 	async remove(ids: string[]) {

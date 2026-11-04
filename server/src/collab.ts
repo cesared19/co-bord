@@ -8,6 +8,8 @@ import type { Ctx } from './context.js'
 import { BoardWatcher } from './notify.js'
 import { type BoardEditor, RuleEngine } from './rules.js'
 import { isUuid } from './validate.js'
+import { cleanupAssets } from './cleanup.js'
+import { pruneLocks } from './loginLimit.js'
 
 export interface CollabContext {
 	user: User
@@ -92,6 +94,33 @@ export function createCollab(ctx: Ctx) {
 	rules.start(ctx.config.rulePollMs ?? 120_000)
 	ctx.rules = rules
 
+	ctx.cleanupAssets = () => cleanupAssets(ctx, (id) => hocuspocus.documents.get(id), ctx.config.assetRetentionDays ?? 30)
+	// daily housekeeping: unused files, old sign-in failures
+	const housekeeping = async () => {
+		try {
+			const { deleted } = await ctx.cleanupAssets!()
+			if (deleted) console.log(`Deleted ${deleted} uploaded files no board used`)
+			await pruneLocks(db)
+		} catch (e) {
+			console.error('Housekeeping failed', e)
+		}
+	}
+	const every = ctx.config.cleanupEveryMs ?? 0
+	const timers = every > 0 ? [setTimeout(housekeeping, 60_000), setInterval(housekeeping, every)] : []
+
+	/** Hocuspocus closes just the document and sends this reason; the app then reads the board again and reconnects. */
+	const ACCESS_CHANGED = { code: 4001, reason: 'Access changed' }
+	ctx.onAccessChanged = async (userId, projectId) => {
+		const boards = projectId
+			? new Set((await db.query<{ id: string }>('SELECT id FROM boards WHERE project_id = $1', [projectId])).rows.map((r) => r.id))
+			: null
+		hocuspocus.documents.forEach((document) => {
+			if (boards && !boards.has(document.name)) return
+			for (const connection of document.getConnections())
+				if ((connection.context as CollabContext | undefined)?.user?.id === userId) connection.close(ACCESS_CHANGED)
+		})
+	}
+
 	ctx.onBoardDeleted = (boardId) => hocuspocus.closeConnections(boardId)
 	ctx.flushBoard = async (boardId) => {
 		const document = hocuspocus.documents.get(boardId)
@@ -116,6 +145,7 @@ export function createCollab(ctx: Ctx) {
 	}
 
 	async function close() {
+		for (const t of timers) clearTimeout(t)
 		await watcher.flushAll()
 		await rules?.stop()
 		hocuspocus.flushPendingStores()

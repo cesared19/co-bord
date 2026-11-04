@@ -1,12 +1,15 @@
-import { KeyRound, Plus, Trash2 } from 'lucide-react'
+import { KeyRound, LockOpen, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { Avatar, Button, ErrorText, Field, Modal, PageHeader, Spinner } from '../components/ui'
 import { api, type User } from '../lib/api'
 import { useUser } from '../lib/auth'
 
+/** A user as admins see them: locked after too many failed sign-ins until this time. */
+type ListedUser = User & { lockedUntil: string | null }
+
 export function Users() {
 	const me = useUser()
-	const [users, setUsers] = useState<User[] | null>(null)
+	const [users, setUsers] = useState<ListedUser[] | null>(null)
 	const [error, setError] = useState('')
 	const [creating, setCreating] = useState(false)
 	const [resetting, setResetting] = useState<User | null>(null)
@@ -14,7 +17,7 @@ export function Users() {
 	const [modalError, setModalError] = useState('')
 
 	const load = useCallback(() => {
-		api<{ users: User[] }>('/api/users')
+		api<{ users: ListedUser[] }>('/api/users')
 			.then((r) => setUsers(r.users))
 			.catch((e) => setError(e.message))
 	}, [])
@@ -42,6 +45,16 @@ export function Users() {
 		setError('')
 		try {
 			await api(`/api/users/${user.id}`, { method: 'PUT', body: { isAdmin: !user.isAdmin } })
+			load()
+		} catch (e) {
+			setError((e as Error).message)
+		}
+	}
+
+	async function unlock(user: User) {
+		setError('')
+		try {
+			await api(`/api/users/${user.id}/lock`, { method: 'DELETE' })
 			load()
 		} catch (e) {
 			setError((e as Error).message)
@@ -86,6 +99,24 @@ export function Users() {
 								</p>
 								<p className="truncate text-xs text-gray-500">{u.username}</p>
 							</div>
+							{u.lockedUntil && (
+								<span className="order-last flex w-full items-center gap-1.5 pl-10 text-xs sm:order-none sm:w-auto sm:pl-0">
+									<span
+										className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+										title={`Too many failed sign-ins. Locked until ${new Date(u.lockedUntil).toLocaleTimeString()}.`}
+									>
+										Locked
+									</span>
+									<button
+										type="button"
+										onClick={() => void unlock(u)}
+										className="flex items-center gap-1 rounded px-1.5 py-1 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+									>
+										<LockOpen size={14} /> Unlock
+										<span className="sr-only"> {u.displayName}</span>
+									</button>
+								</span>
+							)}
 							<label className="flex items-center gap-2 text-sm">
 								<input
 									type="checkbox"

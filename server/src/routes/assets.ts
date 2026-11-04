@@ -58,6 +58,49 @@ export function assetRoutes(app: FastifyInstance, ctx: Ctx) {
 		return { asset: { id, url: assetUrl(id), name, contentType, kind: ALLOWED_TYPES[contentType], size } }
 	})
 
+	/**
+	 * Files of elements pasted from another project's board are copied into this board's project, so everyone
+	 * here can see them. Answers the id each file has in this project; files the user can't read are left out.
+	 */
+	app.post<{ Params: { id: string } }>('/api/boards/:id/assets/copy', async (req) => {
+		const user = await requireUser(ctx, req)
+		if (!isUuid(req.params.id)) throw notFound('Board not found')
+		const access = await boardAccess(db, user, req.params.id)
+		if (!atLeast(access.role, 'editor')) throw forbidden()
+		const ids = (req.body as { ids?: unknown } | null)?.ids
+		if (!Array.isArray(ids) || ids.length > 200 || !ids.every((i) => typeof i === 'string' && isUuid(i)))
+			throw badRequest('ids must be a list of file ids')
+		const { rows } = await db.query<{ id: string; project_id: number; name: string; content_type: string; size: string }>(
+			'SELECT id, project_id, name, content_type, size FROM assets WHERE id = ANY($1)',
+			[[...new Set(ids)]],
+		)
+		const readable = new Map<number, boolean>()
+		const result: Record<string, { id: string; url: string }> = {}
+		for (const asset of rows) {
+			if (asset.project_id === access.projectId) {
+				result[asset.id] = { id: asset.id, url: assetUrl(asset.id) }
+				continue
+			}
+			if (!readable.has(asset.project_id))
+				readable.set(
+					asset.project_id,
+					await projectRole(db, user, asset.project_id).then(
+						() => true,
+						() => false,
+					),
+				)
+			if (!readable.get(asset.project_id) || (await storage.size(asset.id)) === null) continue
+			const id = randomUUID()
+			await storage.copy(asset.id, id)
+			await db.query(
+				'INSERT INTO assets (id, project_id, board_id, name, content_type, size, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+				[id, access.projectId, req.params.id, asset.name, asset.content_type, asset.size, user.id],
+			)
+			result[asset.id] = { id, url: assetUrl(id) }
+		}
+		return { assets: result }
+	})
+
 	app.get<{ Params: { id: string } }>('/api/assets/:id', async (req, reply) => {
 		const user = await requireUser(ctx, req)
 		if (!isUuid(req.params.id)) throw notFound('File not found')
