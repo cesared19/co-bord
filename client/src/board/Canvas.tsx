@@ -1,6 +1,6 @@
 import type { HocuspocusProvider } from '@hocuspocus/provider'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { BoxView, ConnectorView, FrameView } from './ElementView'
+import { BoxView, ConnectorView, DrawView, FrameView } from './ElementView'
 import { FacilitationMenu, TimerPill, VoteBadges, VoteRanking, VotingBanner } from './Facilitation'
 import { useServerClock, useSession } from './session'
 import { SaveTemplateDialog, TemplatePicker } from './TemplatePicker'
@@ -14,6 +14,7 @@ import {
 	FlaskConical,
 	Grid3x3,
 	History,
+	Lock,
 	Map as MapIcon,
 	MessageSquare,
 	Presentation,
@@ -51,6 +52,7 @@ import {
 	intersects,
 	rectFromPoints,
 	rotatePoint,
+	resolveStroke,
 	rotationOf,
 	type Side,
 	sidePoint,
@@ -61,6 +63,19 @@ import {
 	zoomAt,
 } from './geometry'
 import { RemoteCursors, RemoteSelections } from './Presence'
+import {
+	expandToUnits,
+	groupMembers,
+	groupPatches,
+	insideEntered,
+	selectedGroups,
+	ungroupPatches,
+	unitCount,
+	unitGroup,
+	unitOf,
+} from './groups'
+import { addInkPoint, inkPath, type InkSettings, LaserTrail, loadInk, saveInk, strokeElement, touchesStroke } from './ink'
+import { LaserOverlay } from './Laser'
 import { type Gap, GRID, type Guide, snapEdges, snapMove } from './snap'
 import { Minimap } from './Minimap'
 import type { BoardStore } from './store'
@@ -74,6 +89,7 @@ import {
 	drawOrder,
 	type Endpoint,
 	hasText,
+	INK_WIDTHS,
 	isBox,
 	isFrame,
 	type Point,
@@ -132,7 +148,8 @@ type Drag =
 			originals: BoardElement[]
 			moved: boolean
 			clickedId: string
-			collapseTo: string | null
+			/** A click (no drag) on one of several selected things selects just that one. */
+			collapseTo: string[] | null
 			/** Where the moved elements started, and what they can line up with. */
 			bounds: Rect | null
 			others: Rect[]
@@ -142,7 +159,11 @@ type Drag =
 	| { kind: 'scale'; handle: Handle; bounds: Rect; originals: BoardElement[]; startWorld: Point; others: Rect[] }
 	/** Rotation follows the pointer around the center, from where the handle was grabbed. */
 	| { kind: 'rotate'; id: string; center: Point; startAngle: number; original: number }
-	| { kind: 'marquee'; startWorld: Point; current: Point; base: string[] }
+	| { kind: 'marquee'; startWorld: Point; current: Point; base: string[]; started: boolean }
+	/** A pen or highlighter stroke being drawn, in board units. */
+	| { kind: 'ink'; points: Point[] }
+	| { kind: 'erase'; erased: Set<string> }
+	| { kind: 'laser' }
 	| { kind: 'create'; type: 'shape' | 'sticky' | 'text' | 'frame'; startWorld: Point; current: Point }
 	| { kind: 'connect'; from: Endpoint; startWorld: Point; current: Point; target: string | null }
 	| { kind: 'endpoint'; id: string; which: 'from' | 'to'; target: string | null }
@@ -220,6 +241,20 @@ export function Canvas({
 	const [shapeKind, setShapeKind] = useState<ShapeKind>('rect')
 	const [selection, setSelection] = useState<string[]>([])
 	const [editing, setEditing] = useState<string | null>(null)
+	/** The groups double-clicked into, outermost first: clicks pick what's one level inside. */
+	const [entered, setEntered] = useState<string[]>([])
+	const enteredRef = useRef(entered)
+	enteredRef.current = entered
+	/** The draw tool's mode, colors and widths, remembered per person. */
+	const [ink, setInkState] = useState<InkSettings>(loadInk)
+	const inkRef = useRef(ink)
+	inkRef.current = ink
+	const setInk = useCallback((next: InkSettings) => {
+		setInkState(next)
+		saveInk(next)
+	}, [])
+	const laser = useMemo(() => new LaserTrail(), [])
+	const publishLaser = useCallback((strokes: number[][] | null) => provider.setAwarenessField('laser', strokes), [provider])
 	const [, setTick] = useState(0)
 	const drag = useRef<Drag | null>(null)
 	/** Alignment guides and equal gaps shown while dragging. */
@@ -357,7 +392,7 @@ export function Canvas({
 	/** Topmost box under a world point. */
 	const boxAt = useCallback((p: Point, exclude?: string): BoxElement | null => {
 		const list = [...elementsRef.current.values()]
-			.filter((el): el is BoxElement => isBox(el) && el.type !== 'frame')
+			.filter((el): el is BoxElement => isBox(el) && el.type !== 'frame' && el.type !== 'draw')
 			.sort((a, b) => b.z - a.z)
 		return list.find((el) => el.id !== exclude && containsRotated(el, p)) ?? null
 	}, [])
@@ -413,7 +448,7 @@ export function Canvas({
 	const startEditing = useCallback(
 		(id: string) => {
 			const el = elementsRef.current.get(id)
-			if (readOnly || !el || el.type === 'media') return
+			if (readOnly || !el || el.type === 'media' || el.type === 'draw' || el.locked) return
 			store.checkpoint()
 			setSelection([id])
 			setEditing(id)
@@ -457,10 +492,59 @@ export function Canvas({
 
 	const deleteSelection = useCallback(() => {
 		if (readOnly || !selectionRef.current.length) return
+		const all = elementsRef.current
+		const unlocked = selectionRef.current.filter((id) => !all.get(id)?.locked)
+		if (!unlocked.length) return
 		store.checkpoint()
-		store.remove(selectionRef.current)
-		setSelection([])
+		store.remove(unlocked)
+		setSelection(selectionRef.current.filter((id) => !unlocked.includes(id)))
 	}, [readOnly, store])
+
+	// ---------- groups and locking ----------
+
+	const groupSelection = useCallback(() => {
+		const all = elementsRef.current
+		const els = selectionRef.current.map((id) => all.get(id)).filter((el): el is BoardElement => !!el)
+		if (readOnly || unitCount(selectionRef.current, enteredRef.current, all) < 2) return
+		store.checkpoint()
+		store.update(groupPatches(els, enteredRef.current))
+		store.checkpoint()
+	}, [readOnly, store])
+
+	const ungroupSelection = useCallback(() => {
+		const all = elementsRef.current
+		const groups = selectedGroups(selectionRef.current, enteredRef.current, all)
+		if (readOnly || !groups.length) return
+		const els = selectionRef.current.map((id) => all.get(id)).filter((el): el is BoardElement => !!el)
+		store.checkpoint()
+		store.update(ungroupPatches(els, enteredRef.current, groups))
+		store.checkpoint()
+	}, [readOnly, store])
+
+	/** Locks the selection, or unlocks it when all of it is locked. */
+	const toggleLock = useCallback(() => {
+		const all = elementsRef.current
+		const els = selectionRef.current.map((id) => all.get(id)).filter((el): el is BoardElement => !!el)
+		if (readOnly || !els.length) return
+		const lock = !els.every((el) => el.locked)
+		store.checkpoint()
+		store.update(els.map((el) => [el.id, { locked: lock }]))
+		store.checkpoint()
+	}, [readOnly, store])
+
+	/** Erases the strokes under a board point (not locked ones). */
+	const eraseAt = useCallback(
+		(p: Point, erased: Set<string>) => {
+			const radius = 8 / cameraRef.current.zoom
+			const hit = [...elementsRef.current.values()].filter(
+				(el) => el.type === 'draw' && !el.locked && !erased.has(el.id) && touchesStroke(el, p, radius),
+			)
+			if (!hit.length) return
+			for (const el of hit) erased.add(el.id)
+			store.remove(hit.map((el) => el.id))
+		},
+		[store],
+	)
 
 	/** The selected elements, with connector ends that point outside the selection made free. */
 	const detachedSelection = useCallback((): BoardElement[] => {
@@ -841,6 +925,20 @@ export function Canvas({
 			return
 		}
 
+		if (tool === 'draw') {
+			if (readOnly) return
+			if (ink.mode === 'laser') {
+				laser.start(world)
+				drag.current = { kind: 'laser' }
+			} else if (ink.mode === 'eraser') {
+				store.checkpoint()
+				const erased = new Set<string>()
+				eraseAt(world, erased)
+				drag.current = { kind: 'erase', erased }
+			} else drag.current = { kind: 'ink', points: [world] }
+			rerender()
+			return
+		}
 		if (tool === 'comment') {
 			setComposer(anchorFor(world, id, elementsRef.current))
 			setOpenThread(null)
@@ -869,21 +967,45 @@ export function Canvas({
 		if (id) {
 			// while voting, a click is a vote
 			const target = elementsRef.current.get(id)
-			if (voting && !readOnly && target && target.type !== 'connector' && target.type !== 'frame' && !e.shiftKey) {
+			if (
+				voting &&
+				!readOnly &&
+				target &&
+				target.type !== 'connector' &&
+				target.type !== 'frame' &&
+				target.type !== 'draw' &&
+				!e.shiftKey
+			) {
 				session.session.vote(user.id, id)
 				return
 			}
+			const all = elementsRef.current
+			// a click outside the groups double-clicked into leaves them
+			let inGroup = enteredRef.current
+			if (inGroup.length && !insideEntered(target, inGroup)) {
+				inGroup = []
+				setEntered([])
+			}
+			const unit = unitOf(id, inGroup, all)
 			const current = selectionRef.current
 			let next = current
-			let collapseTo: string | null = null
-			if (e.shiftKey || e.metaKey || e.ctrlKey) next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
-			else if (!current.includes(id)) next = [id]
-			else if (current.length > 1) collapseTo = id
+			let collapseTo: string[] | null = null
+			if (e.shiftKey || e.metaKey || e.ctrlKey)
+				next = unit.every((x) => current.includes(x)) ? current.filter((x) => !unit.includes(x)) : [...new Set([...current, ...unit])]
+			else if (!current.includes(id)) next = unit
+			else if (current.length > unit.length) collapseTo = unit
 			setSelection(next)
 			if (readOnly || !next.includes(id)) return
+			// locked: a click selects it, a drag selects with a box as if on the board
+			if (target?.locked) {
+				drag.current = { kind: 'marquee', startWorld: world, current: world, base: [], started: false }
+				return
+			}
 			store.checkpoint()
-			const all = elementsRef.current
-			const originals = withFrameContents(next, all)
+			const originals = withFrameContents(
+				next.filter((x) => !all.get(x)?.locked),
+				all,
+			)
 				.map((x) => all.get(x))
 				.filter((x): x is BoardElement => !!x)
 			drag.current = {
@@ -898,8 +1020,11 @@ export function Canvas({
 			}
 		} else {
 			const base = e.shiftKey ? selectionRef.current : []
-			if (!e.shiftKey) setSelection([])
-			drag.current = { kind: 'marquee', startWorld: world, current: world, base }
+			if (!e.shiftKey) {
+				setSelection([])
+				setEntered([])
+			}
+			drag.current = { kind: 'marquee', startWorld: world, current: world, base, started: true }
 		}
 	}
 
@@ -1018,19 +1143,33 @@ export function Canvas({
 			}
 			case 'marquee': {
 				d.current = world
+				if (!d.started && Math.hypot(world.x - d.startWorld.x, world.y - d.startWorld.y) * cameraRef.current.zoom < 4) return
+				d.started = true
 				const r = rectFromPoints(d.startWorld, world)
 				const all = elementsRef.current
-				// frames only when the box covers them whole, so selecting inside a frame doesn't pick it
+				// frames only when the box covers them whole, so selecting inside a frame doesn't pick it; never locked ones
 				const hit = [...all.values()]
 					.filter((el) => {
+						if (el.locked) return false
 						const b = elementBounds(el, all)
 						return el.type === 'frame' ? b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w && b.y + b.h <= r.y + r.h : intersects(r, b)
 					})
 					.map((el) => el.id)
-				setSelection([...new Set([...d.base, ...hit])])
+				const units = expandToUnits(hit, enteredRef.current, all).filter((x) => !all.get(x)?.locked)
+				setSelection([...new Set([...d.base, ...units])])
 				rerender()
 				return
 			}
+			case 'ink':
+				addInkPoint(d.points, world, 1.5 / cameraRef.current.zoom)
+				rerender()
+				return
+			case 'erase':
+				eraseAt(world, d.erased)
+				return
+			case 'laser':
+				laser.add(world)
+				return
 			case 'create':
 				d.current = world
 				rerender()
@@ -1071,8 +1210,29 @@ export function Canvas({
 
 		switch (d.kind) {
 			case 'move':
-				if (!d.moved && d.collapseTo) setSelection([d.collapseTo])
+				if (!d.moved && d.collapseTo) setSelection(d.collapseTo)
 				store.checkpoint()
+				break
+			case 'ink': {
+				addInkPoint(d.points, world, 0.5 / zoom)
+				const highlighter = ink.mode === 'highlighter'
+				const style = highlighter ? ink.highlighter : ink.pen
+				store.checkpoint()
+				store.add([
+					strokeElement(d.points, {
+						stroke: style.color,
+						strokeWidth: (highlighter ? INK_WIDTHS.highlighter : INK_WIDTHS.pen)[style.width] ?? 4,
+						highlighter,
+					}),
+				])
+				store.checkpoint()
+				break
+			}
+			case 'erase':
+				store.checkpoint()
+				break
+			case 'laser':
+				laser.end()
 				break
 			case 'resize':
 			case 'scale':
@@ -1122,10 +1282,24 @@ export function Canvas({
 
 	function onDoubleClick(e: React.MouseEvent) {
 		if (readOnly) return
-		const id = (e.target as Element).closest<HTMLElement>('[data-el]')?.dataset.el
-		if (id) return startEditing(id)
-		if (tool === 'select' && !(e.target as Element).closest('[data-handle],[data-ui]'))
-			createBox('text', toWorld(cameraRef.current, localPoint(e)), true)
+		// the board captures the pointer, so the event's target can be the board itself: look at what's under it
+		const under = document.elementFromPoint(e.clientX, e.clientY) ?? (e.target as Element)
+		const id = under.closest<HTMLElement>('[data-el]')?.dataset.el
+		if (tool === 'draw') return
+		if (id) {
+			// in a group: go one level in, and pick what was clicked there
+			const all = elementsRef.current
+			const el = all.get(id)
+			const level = insideEntered(el, enteredRef.current) ? enteredRef.current.length : 0
+			if (unitGroup(el, enteredRef.current) && el?.groups) {
+				const inside = el.groups.slice(0, level + 1)
+				setEntered(inside)
+				setSelection(unitOf(id, inside, all))
+				return
+			}
+			return startEditing(id)
+		}
+		if (tool === 'select' && !under.closest('[data-handle],[data-ui]')) createBox('text', toWorld(cameraRef.current, localPoint(e)), true)
 	}
 
 	// ---------- following and presenting ----------
@@ -1264,7 +1438,18 @@ export function Canvas({
 			}
 			if (mod && key === 'a') {
 				e.preventDefault()
-				select([...elementsRef.current.keys()])
+				select([...elementsRef.current.values()].filter((el) => !el.locked).map((el) => el.id))
+				return
+			}
+			if (mod && key === 'g') {
+				e.preventDefault()
+				if (e.shiftKey) ungroupSelection()
+				else groupSelection()
+				return
+			}
+			if (mod && e.shiftKey && key === 'l') {
+				e.preventDefault()
+				toggleLock()
 				return
 			}
 			if (mod && key === 'd') {
@@ -1302,10 +1487,17 @@ export function Canvas({
 				case 'Backspace':
 					e.preventDefault()
 					return deleteSelection()
-				case 'Escape':
+				case 'Escape': {
 					stopFollowRef.current()
 					setTool('select')
+					// out of a group: back to the group as a whole
+					const inside = enteredRef.current
+					if (inside.length) {
+						setEntered(inside.slice(0, -1))
+						return select(groupMembers(inside[inside.length - 1], elementsRef.current))
+					}
 					return select([])
+				}
 				case 'Enter':
 					if (selectionRef.current.length === 1) {
 						e.preventDefault()
@@ -1323,7 +1515,10 @@ export function Canvas({
 					const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
 					const all = elementsRef.current
 					store.update(
-						withFrameContents(selectionRef.current, all)
+						withFrameContents(
+							selectionRef.current.filter((id) => !all.get(id)?.locked),
+							all,
+						)
 							.map((id) => all.get(id))
 							.filter((el): el is BoardElement => !!el)
 							.map((el): [string, Partial<BoardElement>] => {
@@ -1345,9 +1540,15 @@ export function Canvas({
 				l: 'connector',
 				f: 'frame',
 				c: 'comment',
+				p: 'draw',
+				e: 'draw',
+				k: 'draw',
 			}
 			if (tools[key] && (!readOnly || key === 'v' || key === 'h' || (key === 'c' && !guest))) {
 				if (key === 'r') setShapeKind('rect')
+				if (key === 'p') setInk({ ...inkRef.current, mode: inkRef.current.mode === 'highlighter' ? 'highlighter' : 'pen' })
+				if (key === 'e') setInk({ ...inkRef.current, mode: 'eraser' })
+				if (key === 'k') setInk({ ...inkRef.current, mode: 'laser' })
 				setTool(tools[key])
 			}
 		}
@@ -1432,6 +1633,10 @@ export function Canvas({
 		select,
 		duplicate,
 		deleteSelection,
+		groupSelection,
+		ungroupSelection,
+		toggleLock,
+		setInk,
 		startEditing,
 		detachedSelection,
 		fit,
@@ -1452,7 +1657,27 @@ export function Canvas({
 	const highlightEl = highlight ? elements.get(highlight) : null
 
 	const cursor =
-		d?.kind === 'pan' ? 'grabbing' : tool === 'hand' || spaceDown.current ? 'grab' : tool === 'select' ? 'default' : 'crosshair'
+		d?.kind === 'pan'
+			? 'grabbing'
+			: tool === 'hand' || spaceDown.current
+				? 'grab'
+				: tool === 'select'
+					? 'default'
+					: tool === 'draw' && ink.mode === 'eraser'
+						? 'cell'
+						: 'crosshair'
+	const anyLocked = selectedEls.some((el) => el.locked)
+	/** The group double-clicked into, outlined while working inside it. */
+	const enteredBounds = entered.length
+		? unionBounds(
+				groupMembers(entered[entered.length - 1], elements)
+					.map((id) => elements.get(id))
+					.filter((el): el is BoardElement => !!el)
+					.map((el) => elementBounds(el, elements)),
+			)
+		: null
+	const inkStyle = ink.mode === 'highlighter' ? ink.highlighter : ink.pen
+	const inkWidth = (ink.mode === 'highlighter' ? INK_WIDTHS.highlighter : INK_WIDTHS.pen)[inkStyle.width] ?? 4
 
 	const screenRect = (r: Rect) => {
 		const p = toScreen(camera, r)
@@ -1586,9 +1811,24 @@ export function Canvas({
 								/>
 							) : el.type === 'media' ? (
 								<MediaView key={el.id} el={el} dark={dark} active={!d && liveSelection.length === 1 && liveSelection[0] === el.id} />
+							) : el.type === 'draw' ? (
+								<DrawView key={el.id} el={el} dark={dark} />
 							) : (
 								<BoxView key={el.id} el={el} dark={dark} editing={editing === el.id} onText={onText} onEditEnd={finishEditing} />
 							),
+						)}
+						{d?.kind === 'ink' && (
+							<svg style={{ position: 'absolute', overflow: 'visible', pointerEvents: 'none' }} width={1} height={1} aria-hidden>
+								<path
+									d={inkPath(d.points.flatMap((p) => [p.x, p.y]))}
+									fill="none"
+									stroke={resolveStroke(inkStyle.color, dark)}
+									strokeOpacity={ink.mode === 'highlighter' ? 0.4 : 1}
+									strokeWidth={inkWidth}
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								/>
+							</svg>
 						)}
 						{connectPreview && (
 							<svg style={{ position: 'absolute', overflow: 'visible', pointerEvents: 'none' }} width={1} height={1} aria-hidden>
@@ -1606,6 +1846,29 @@ export function Canvas({
 					{/* overlays in screen space */}
 					<div className="pointer-events-none absolute inset-0">
 						<RemoteSelections peers={peers} elements={elements} camera={camera} />
+						{enteredBounds && (
+							<div
+								className="absolute rounded-md border border-dashed border-gray-400 dark:border-gray-500"
+								style={screenRect({
+									x: enteredBounds.x - 12 / camera.zoom,
+									y: enteredBounds.y - 12 / camera.zoom,
+									w: enteredBounds.w + 24 / camera.zoom,
+									h: enteredBounds.h + 24 / camera.zoom,
+								})}
+							/>
+						)}
+						{anyLocked && selectionBounds && !d && (
+							<div
+								className="absolute flex size-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gray-900 text-white shadow dark:bg-gray-100 dark:text-gray-900"
+								style={{
+									left: toScreen(camera, selectionBounds).x + selectionBounds.w * camera.zoom,
+									top: toScreen(camera, selectionBounds).y,
+								}}
+								title="Locked"
+							>
+								<Lock size={11} strokeWidth={2.5} />
+							</div>
+						)}
 						{highlightEl && isBox(highlightEl) && (
 							<div className="absolute rounded-sm ring-2 ring-brand-500 ring-offset-2" style={screenRect(highlightEl)} />
 						)}
@@ -1640,6 +1903,7 @@ export function Canvas({
 						{selectedEls.length > 1 &&
 							selectionBounds &&
 							!readOnly &&
+							!anyLocked &&
 							!d &&
 							HANDLES.map((h) => {
 								const s = toScreen(camera, handlePoint(selectionBounds, h))
@@ -1653,7 +1917,7 @@ export function Canvas({
 									/>
 								)
 							})}
-						{single && isBox(single) && !readOnly && editing !== single.id && (
+						{single && isBox(single) && !readOnly && !single.locked && editing !== single.id && (
 							<>
 								{HANDLES.map((h) => {
 									const p = rotatePoint(handlePoint(single, h), center(single), rotationOf(single))
@@ -1694,6 +1958,7 @@ export function Canvas({
 									</div>
 								)}
 								{single.type !== 'frame' &&
+									single.type !== 'draw' &&
 									SIDES.map((side) => {
 										const p = toScreen(camera, sidePoint(single, side))
 										const off = 22
@@ -1725,6 +1990,7 @@ export function Canvas({
 						)}
 						{single?.type === 'connector' &&
 							!readOnly &&
+							!single.locked &&
 							(() => {
 								const g = connectorGeometry(single, elements)
 								return (['from', 'to'] as const).map((which) => {
@@ -1781,6 +2047,7 @@ export function Canvas({
 								setOpenThread(id)
 							}}
 						/>
+						<LaserOverlay trail={laser} peers={peers} camera={camera} publish={publishLaser} />
 						<RemoteCursors peers={peers} camera={camera} />
 					</div>
 				</div>
@@ -2162,6 +2429,8 @@ export function Canvas({
 					<Toolbar
 						tool={tool}
 						shapeKind={shapeKind}
+						ink={ink}
+						onInk={setInk}
 						onTool={setTool}
 						onShape={(kind) => {
 							setShapeKind(kind)
@@ -2262,6 +2531,9 @@ export function Canvas({
 						viewport={size}
 						onDelete={deleteSelection}
 						onDuplicate={duplicate}
+						onLock={toggleLock}
+						onGroup={unitCount(liveSelection, entered, elements) > 1 ? groupSelection : undefined}
+						onUngroup={selectedGroups(liveSelection, entered, elements).length ? ungroupSelection : undefined}
 						onEditText={() => single && startEditing(single.id)}
 						onWrapInFrame={wrapInFrame}
 						onExportFrame={exportFrame}

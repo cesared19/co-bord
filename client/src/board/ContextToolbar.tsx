@@ -11,6 +11,10 @@ import {
 	Download,
 	ExternalLink,
 	Frame,
+	Group,
+	Lock,
+	LockOpen,
+	Ungroup,
 	AlignCenter,
 	AlignLeft,
 	AlignRight,
@@ -35,6 +39,8 @@ import {
 	type ConnectorElement,
 	FONT_SIZES,
 	hasText,
+	INK_COLORS,
+	INK_WIDTHS,
 	isFrame,
 	FRAME_COLORS,
 	PALETTE,
@@ -50,6 +56,12 @@ interface Props {
 	viewport: { w: number; h: number }
 	onDelete: () => void
 	onDuplicate: () => void
+	/** Locks the selection, or unlocks it when all of it is locked. */
+	onLock: () => void
+	/** Groups the selection, when it's more than one thing. */
+	onGroup?: () => void
+	/** Takes the selected groups apart. */
+	onUngroup?: () => void
 	onEditText: () => void
 	onWrapInFrame: () => void
 	onExportFrame: (id: string) => void
@@ -80,6 +92,9 @@ export function ContextToolbar({
 	viewport,
 	onDelete,
 	onDuplicate,
+	onLock,
+	onGroup,
+	onUngroup,
 	onEditText,
 	onWrapInFrame,
 	onExportFrame,
@@ -124,6 +139,47 @@ export function ContextToolbar({
 	}
 
 	const ids = selected.map((el) => el.id)
+	const allLocked = selected.every((el) => el.locked)
+	const strokes = selected.filter((el) => el.type === 'draw')
+	const lockButton = (
+		<button
+			type="button"
+			title={allLocked ? 'Unlock (Ctrl+Shift+L)' : "Lock: it can't be moved or edited (Ctrl+Shift+L)"}
+			aria-pressed={allLocked}
+			className={`${btn} ${allLocked ? on : ''}`}
+			onClick={onLock}
+		>
+			{allLocked ? <Lock size={16} /> : <LockOpen size={16} />}
+			<span className="sr-only">{allLocked ? 'Unlock' : 'Lock'}</span>
+		</button>
+	)
+
+	// locked: only unlocking (and following)
+	if (allLocked)
+		return (
+			<div
+				ref={ref}
+				data-ui
+				onPointerDown={(e) => e.stopPropagation()}
+				className="absolute z-20 flex items-center gap-0.5 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+				style={pos}
+			>
+				{lockButton}
+				<span className="px-1.5 text-xs text-gray-500">Locked</span>
+				{onToggleFollow && (
+					<button
+						type="button"
+						title={following ? 'Following: you are notified when it changes. Click to stop.' : 'Follow: be notified when it changes'}
+						aria-pressed={following}
+						className={`${btn} ${following ? on : ''}`}
+						onClick={onToggleFollow}
+					>
+						{following ? <BellRing size={16} className="text-brand-600" /> : <Bell size={16} />}
+						<span className="sr-only">{following ? 'Stop following' : 'Follow'}</span>
+					</button>
+				)}
+			</div>
+		)
 
 	return (
 		<div
@@ -192,6 +248,46 @@ export function ContextToolbar({
 							</div>
 						)}
 					</Popover>
+					<Divider />
+				</>
+			)}
+			{strokes.length > 0 && (
+				<>
+					<Popover label="Stroke color" button={<Swatch color={strokes[0].stroke} />}>
+						{(close) => (
+							<div className="grid grid-cols-4 gap-1">
+								{INK_COLORS.map((c) => (
+									<button
+										key={c}
+										type="button"
+										title={c === 'auto' ? 'Automatic' : c}
+										className={`rounded-full p-0.5 ${strokes[0].stroke === c ? 'ring-2 ring-brand-500' : 'hover:ring-2 hover:ring-gray-300'}`}
+										onClick={() => (patch(strokes, { stroke: c }), close())}
+									>
+										<Swatch color={c} size={22} />
+									</button>
+								))}
+							</div>
+						)}
+					</Popover>
+					{strokes.every((el) => !!el.highlighter === !!strokes[0].highlighter) && (
+						<Popover label="Stroke width" button={<span className="text-xs tabular-nums">{strokes[0].strokeWidth}px</span>}>
+							{(close) => (
+								<div className="flex gap-0.5">
+									{INK_WIDTHS[strokes[0].highlighter ? 'highlighter' : 'pen'].map((w) => (
+										<button
+											key={w}
+											type="button"
+											className={`${btn} text-xs ${strokes[0].strokeWidth === w ? on : ''}`}
+											onClick={() => (patch(strokes, { strokeWidth: w }), close())}
+										>
+											{w}px
+										</button>
+									))}
+								</div>
+							)}
+						</Popover>
+					)}
 					<Divider />
 				</>
 			)}
@@ -490,6 +586,19 @@ export function ContextToolbar({
 					<span className="sr-only">Straighten</span>
 				</button>
 			)}
+			{onGroup && (
+				<button type="button" title="Group (Ctrl+G)" className={btn} onClick={onGroup}>
+					<Group size={16} />
+					<span className="sr-only">Group</span>
+				</button>
+			)}
+			{onUngroup && (
+				<button type="button" title="Ungroup (Ctrl+Shift+G)" className={btn} onClick={onUngroup}>
+					<Ungroup size={16} />
+					<span className="sr-only">Ungroup</span>
+				</button>
+			)}
+			{lockButton}
 			<button type="button" title="Bring to front" className={btn} onClick={() => (store.checkpoint(), store.bringToFront(ids))}>
 				<BringToFront size={16} />
 			</button>

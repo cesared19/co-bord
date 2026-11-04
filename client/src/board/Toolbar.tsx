@@ -1,5 +1,9 @@
 import {
+	Eraser,
+	Highlighter,
 	MessageSquare,
+	Pen,
+	Sparkles,
 	Frame,
 	Hand,
 	ImagePlus,
@@ -18,7 +22,8 @@ import {
 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { shapePath } from './geometry'
-import { SHAPES, type ShapeKind, type Tool } from './types'
+import type { InkSettings } from './ink'
+import { INK_COLORS, INK_WIDTHS, type InkMode, SHAPES, type ShapeKind, type Tool } from './types'
 
 const panel = 'rounded-xl border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900'
 
@@ -103,6 +108,8 @@ export function ShapeIcon({ kind, size = 20 }: { kind: ShapeKind; size?: number 
 interface ToolbarProps {
 	tool: Tool
 	shapeKind: ShapeKind
+	ink: InkSettings
+	onInk: (ink: InkSettings) => void
 	onTool: (tool: Tool) => void
 	onShape: (kind: ShapeKind) => void
 	onUndo: () => void
@@ -120,6 +127,8 @@ interface ToolbarProps {
 export function Toolbar({
 	tool,
 	shapeKind,
+	ink,
+	onInk,
 	onTool,
 	onShape,
 	onUndo,
@@ -184,6 +193,7 @@ export function Toolbar({
 				<ToolButton label="Connector" shortcut="L" active={tool === 'connector'} onClick={() => onTool('connector')}>
 					<MoveUpRight size={19} />
 				</ToolButton>
+				<InkTool ink={ink} active={tool === 'draw'} onInk={onInk} onPick={() => onTool('draw')} />
 				<MediaMenu onFiles={onFiles} onLink={onLink} confluence={confluence} />
 				<ToolButton label="Frame" shortcut="F" active={tool === 'frame'} onClick={() => onTool('frame')}>
 					<Frame size={19} />
@@ -468,6 +478,118 @@ function ConfluenceSearch({ picker, onPicked }: { picker: ConfluencePicker; onPi
 					</li>
 				))}
 			</ul>
+		</div>
+	)
+}
+
+const INK_MODES: { mode: InkMode; label: string; shortcut: string; icon: ReactNode }[] = [
+	{ mode: 'pen', label: 'Pen', shortcut: 'P', icon: <Pen size={18} /> },
+	{ mode: 'highlighter', label: 'Highlighter', shortcut: 'P', icon: <Highlighter size={18} /> },
+	{ mode: 'eraser', label: 'Eraser', shortcut: 'E', icon: <Eraser size={18} /> },
+	{ mode: 'laser', label: 'Laser: fades away', shortcut: 'K', icon: <Sparkles size={18} /> },
+]
+
+/** Draw: pen, highlighter, eraser and laser, with colors and widths for the strokes. */
+function InkTool({
+	ink,
+	active,
+	onInk,
+	onPick,
+}: {
+	ink: InkSettings
+	active: boolean
+	onInk: (ink: InkSettings) => void
+	onPick: () => void
+}) {
+	const [open, setOpen] = useState(false)
+	const ref = useRef<HTMLDivElement>(null)
+	useEffect(() => {
+		if (!open) return
+		const close = (e: PointerEvent) => {
+			if (!ref.current?.contains(e.target as Node)) setOpen(false)
+		}
+		window.addEventListener('pointerdown', close)
+		return () => window.removeEventListener('pointerdown', close)
+	}, [open])
+	const current = INK_MODES.find((m) => m.mode === ink.mode) ?? INK_MODES[0]
+	const kind = ink.mode === 'highlighter' ? 'highlighter' : 'pen'
+	const style = ink[kind]
+	const strokes = ink.mode === 'pen' || ink.mode === 'highlighter'
+	const btn = 'flex size-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800'
+	return (
+		<div ref={ref} className="relative">
+			<ToolButton
+				label="Draw"
+				shortcut="P"
+				active={active}
+				onClick={() => {
+					if (!active) onPick()
+					setOpen(!active || !open)
+				}}
+			>
+				{current.icon}
+			</ToolButton>
+			{open && (
+				<div className={`${panel} absolute top-0 left-12 w-max space-y-2 p-2`}>
+					<div className="flex gap-0.5" role="group" aria-label="Drawing mode">
+						{INK_MODES.map((m) => (
+							<button
+								key={m.mode}
+								type="button"
+								title={`${m.label} (${m.shortcut})`}
+								aria-pressed={ink.mode === m.mode}
+								onClick={() => {
+									onInk({ ...ink, mode: m.mode })
+									onPick()
+								}}
+								className={`${btn} ${ink.mode === m.mode ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-200' : ''}`}
+							>
+								{m.icon}
+								<span className="sr-only">{m.label}</span>
+							</button>
+						))}
+					</div>
+					{strokes && (
+						<>
+							<div className="grid grid-cols-4 gap-1" role="group" aria-label="Color">
+								{INK_COLORS.map((c) => (
+									<button
+										key={c}
+										type="button"
+										title={c === 'auto' ? 'Automatic' : c}
+										aria-pressed={style.color === c}
+										onClick={() => onInk({ ...ink, [kind]: { ...style, color: c } })}
+										className={`flex size-8 items-center justify-center rounded-full ${style.color === c ? 'ring-2 ring-brand-500' : 'hover:ring-2 hover:ring-gray-300'}`}
+									>
+										<span
+											className="size-5 rounded-full border border-gray-300 dark:border-gray-600"
+											style={{ background: c === 'auto' ? 'linear-gradient(135deg, #1f2937 50%, #f9fafb 50%)' : c }}
+										/>
+										<span className="sr-only">{c === 'auto' ? 'Automatic' : c}</span>
+									</button>
+								))}
+							</div>
+							<div className="flex gap-0.5" role="group" aria-label="Width">
+								{INK_WIDTHS[kind].map((w, i) => (
+									<button
+										key={w}
+										type="button"
+										title={['Thin', 'Medium', 'Thick'][i]}
+										aria-pressed={style.width === i}
+										onClick={() => onInk({ ...ink, [kind]: { ...style, width: i } })}
+										className={`${btn} ${style.width === i ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+									>
+										<span className="rounded-full bg-current" style={{ width: 4 + i * 5, height: 4 + i * 5 }} />
+										<span className="sr-only">{['Thin', 'Medium', 'Thick'][i]}</span>
+									</button>
+								))}
+							</div>
+						</>
+					)}
+					{ink.mode === 'eraser' && <p className="max-w-44 text-xs text-gray-500">Drag over strokes to erase them.</p>}
+					{ink.mode === 'laser' && <p className="max-w-44 text-xs text-gray-500">Point things out: everyone sees it, then it fades.</p>}
+				</div>
+			)}
 		</div>
 	)
 }

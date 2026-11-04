@@ -90,6 +90,7 @@ export function Minimap({
 		for (const el of [...elements.values()].sort((a, b) => (a.type === 'frame' ? 0 : 1) - (b.type === 'frame' ? 0 : 1))) {
 			if (el.type === 'connector') continue
 			if (el.type === 'frame') {
+				ctx.globalAlpha = 1
 				const a = toMap(el)
 				ctx.strokeStyle = muted
 				ctx.lineWidth = 1
@@ -97,7 +98,15 @@ export function Minimap({
 				continue
 			}
 			const fill =
-				el.type === 'sticky' ? el.fill : el.type === 'shape' && el.fill !== 'transparent' && el.fill !== '#ffffff' ? el.fill : muted
+				el.type === 'sticky'
+					? el.fill
+					: el.type === 'shape' && el.fill !== 'transparent' && el.fill !== '#ffffff'
+						? el.fill
+						: el.type === 'draw' && el.stroke !== 'auto'
+							? el.stroke
+							: muted
+			// strokes are lines, not areas: see-through so they don't hide what's under them
+			ctx.globalAlpha = el.type === 'draw' ? 0.35 : 1
 			ctx.fillStyle = fill
 			const corners = boxCorners(el).map(toMap)
 			const b = { w: el.w * scale, h: el.h * scale }

@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.12.2)
+## Features (0.13.0)
 
 ### Boards
 
@@ -16,6 +16,9 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Alignment guides**: while moving or resizing, elements line up with the edges and centers of the ones around them, and space evenly between neighbors, with guides showing how. **Snap to the grid** (the grid button by the zoom) puts them on a 20-pixel grid instead. Hold Alt to move freely.
 -  **Rotate** shapes, sticky notes, text and media with the round handle by the top right corner (Shift for 15° steps; it settles at 0°, 90°, 180° and 270°). Connectors stay attached. **Straighten** in the toolbar sets it back to 0°. Frames don't rotate.
 -  **Resize several elements at once** with the handles around the selection: everything scales together, text included (Shift keeps the proportions).
+-  **Group** (Ctrl G, or **Group** in the toolbar) several elements to move, copy and resize them together without a frame. A click selects the whole group; double-click goes into it to pick or edit one element (Esc goes back out). Groups can hold groups. **Ungroup** with Ctrl Shift G.
+-  **Lock** (Ctrl Shift L, or the lock in the toolbar) what shouldn't move by accident, like a background frame or a template: a locked element can't be moved, resized, edited or deleted, and box selections skip it. A click still selects it, to unlock it; any editor can.
+-  **Draw** (P) with the pen or the highlighter, in eight colors and three widths; highlighter strokes are see-through and stay below notes and shapes. Strokes are selected, moved, resized and recolored like any element. The **eraser** (E) removes the strokes you drag over. The **laser** (K) points things out while presenting: everyone sees it, and it fades away in a moment without staying on the board.
 -  **Minimap** (the map button by the zoom): the board in small, with the part on screen and teammates' cursors; click or drag on it to move there. It shows the main group of elements; anything far away from it is a dot on the edge that takes you there. It's remembered per person and hidden on phones at first.
 -  **Undo and redo** (Ctrl Z, Ctrl Shift Z) undo your own changes only, never a teammate's.
 -  **Download** the whole board as a PNG image or a PDF, or a PDF with a page per frame (in reading order, with its title), with images and the first page of PDFs.
@@ -43,6 +46,9 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
    -  Retrospectives: **Start, Stop, Continue**, **Mad, Sad, Glad** and **4Ls**, each with a column per topic and an action items area.
    -  **Workflow**: a connected flowchart with a start, steps, a decision and an end.
    -  **Design document**: context, goals, non-goals, proposal with a diagram area, alternatives, risks and a decision log, plus a column for review comments.
+   -  **User story map**: activities and their steps from left to right, and the stories for each step in a release 1 (MVP) and a release 2 area.
+   -  **Priority matrix**: impact and effort in four quadrants (quick wins, big bets, fill-ins, money pits), with notes to sort.
+   -  **Sequence diagram**: participants with their lifelines (each grouped with its participant), and the calls and replies between them.
 
 ### Timer and voting
 
@@ -114,10 +120,14 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 | Keys | Action |
 | --- | --- |
 | V, H, N, T, S / R, L, F | Select, Hand, Sticky note, Text, Shape / Rectangle, Connector, Frame |
+| P, E, K | Draw (pen or highlighter), eraser, laser |
 | Enter | Edit the text, label or frame title of the selected element |
-| Esc | Finish editing, clear the selection |
+| Esc | Finish editing, leave a group, clear the selection |
+| Double-click | Go into a group; edit the text |
 | Delete, Backspace | Delete |
 | Ctrl A, Ctrl D | Select all, duplicate |
+| Ctrl G, Ctrl Shift G | Group, ungroup |
+| Ctrl Shift L | Lock, unlock |
 | Ctrl C, Ctrl X, Ctrl V | Copy, cut, paste |
 | Ctrl Z, Ctrl Shift Z / Ctrl Y | Undo, redo |
 | Ctrl +, Ctrl -, Ctrl 0 | Zoom in, out, 100% |
@@ -137,7 +147,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 4. ~~Templates: retrospectives (columns, votes, timer), workflows and design documents; frames~~ (0.3.0)
 5. ~~Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage~~ (0.4.0); ~~Confluence pages embedded as blocks, and boards published to Confluence~~ (0.5.0)
 6. ~~Automations: guided retrospectives and notifications~~ (0.6.0); ~~card rules and generating SparkyTC test cases from a flow~~ (0.7.0)
-7. ~~Alignment guides, grid, rotation, resizing several elements and a minimap~~ (0.9.0); ~~comments, version history and synced videos and PDF pages~~ (0.10.0); ~~following and presenting, find and PDF export~~ (0.11.0)
+7. ~~Alignment guides, grid, rotation, resizing several elements and a minimap~~ (0.9.0); ~~comments, version history and synced videos and PDF pages~~ (0.10.0); ~~following and presenting, find and PDF export~~ (0.11.0); ~~groups, locking, drawing and more templates~~ (0.13.0)
 
 ## Running it
 

@@ -1,6 +1,7 @@
 import * as Y from 'yjs'
 import { newId } from '../lib/id'
 import { connectorGeometry, type ElementMap } from './geometry'
+import { copiedGroups } from './groups'
 import type { BoardElement, DistributiveOmit, Point } from './types'
 import { isBox } from './types'
 
@@ -109,7 +110,13 @@ export class BoardStore {
 	 */
 	clone(elements: BoardElement[], offset: Point, source: ElementMap = this.elements()): string[] {
 		const ids = new Map(elements.map((el) => [el.id, newId()]))
-		const copies = elements.map((el): BoardElement => {
+		const groups = copiedGroups(elements, this.elements())
+		const regroup = (el: BoardElement) => {
+			if (!el.groups?.length) return el
+			const path = el.groups.map((g) => groups.get(g)).filter((g): g is string => !!g)
+			return { ...el, groups: path }
+		}
+		const copies = elements.map(regroup).map((el): BoardElement => {
 			if (isBox(el)) return { ...el, id: ids.get(el.id)!, x: el.x + offset.x, y: el.y + offset.y }
 			const g = connectorGeometry(el, source)
 			const end = (e: typeof el.from, p: Point) =>
