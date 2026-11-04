@@ -1,6 +1,7 @@
 import type { SecretBox } from './crypto.js'
 import type { Db } from './db.js'
 import { HttpError } from './errors.js'
+import { unreachable } from './net.js'
 
 export interface JiraConfig {
 	url: string
@@ -44,8 +45,8 @@ export async function jiraRequest<T>(auth: JiraAuth, path: string, init: { metho
 			body: init.json === undefined ? undefined : JSON.stringify(init.json),
 			signal: AbortSignal.timeout(20_000),
 		})
-	} catch {
-		throw new HttpError(502, `Jira can't be reached at ${auth.url}`)
+	} catch (e) {
+		throw unreachable('Jira', auth.url, e)
 	}
 	const text = await res.text()
 	let data: unknown = null

@@ -1,6 +1,7 @@
 import type { SecretBox } from './crypto.js'
 import type { Db } from './db.js'
 import { HttpError } from './errors.js'
+import { unreachable } from './net.js'
 
 export interface ConfluenceConfig {
 	url: string
@@ -53,8 +54,8 @@ export async function confluenceRequest<T>(
 	let res: Response
 	try {
 		res = await fetch(`${auth.url}/wiki${path}`, { method: init.method ?? 'GET', headers, body, signal: AbortSignal.timeout(20_000) })
-	} catch {
-		throw new HttpError(502, `Confluence can't be reached at ${auth.url}`)
+	} catch (e) {
+		throw unreachable('Confluence', auth.url, e)
 	}
 	const text = await res.text()
 	let data: unknown = null

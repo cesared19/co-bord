@@ -72,6 +72,11 @@ describe('SparkyTC connection', () => {
 		expect(rejected.body.error).toContain('rejected the token')
 		const unreachable = await admin.put(base, { url: 'http://127.0.0.1:1', token: 'stc_good' })
 		expect(unreachable.body.error).toContain("can't be reached")
+		const local = await admin.put(base, { url: 'http://127.0.0.1:59999', token: 'stc_good' })
+		expect(local.body.error).toContain('is the container itself')
+		const unknown = await admin.put(base, { url: 'http://backend-service.invalid:8080', token: 'stc_good' })
+		expect(unknown.body.error).toContain("doesn't know the name backend-service.invalid")
+		expect(unknown.body.error).toContain('SPARKYTC_NETWORK')
 
 		const saved = await admin.put(base, { url: `${fakeUrl}/`, publicUrl: 'http://sparky.example:3000', token: 'stc_good' })
 		expect(saved.status).toBe(200)
