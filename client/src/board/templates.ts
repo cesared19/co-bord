@@ -59,14 +59,14 @@ function shape(kind: ShapeKind, x: number, y: number, w: number, h: number, valu
 	}
 }
 
-function sticky(x: number, y: number, value: string, fill: string): StickyElement {
+function sticky(x: number, y: number, value: string, fill: string, w = 180, h = 180): StickyElement {
 	return {
 		...base(),
 		type: 'sticky',
 		x,
 		y,
-		w: 180,
-		h: 180,
+		w,
+		h,
 		text: value,
 		fill,
 		fontSize: 16,
@@ -89,6 +89,24 @@ function connect(from: { id: string; x: number; y: number }, to: { id: string; x
 		startArrow: false,
 		endArrow: true,
 		label,
+	}
+}
+
+/** A line between two free points: a lifeline or a message in a sequence diagram. */
+function line(x1: number, y1: number, x2: number, y2: number, opts: Partial<ConnectorElement> = {}): ConnectorElement {
+	return {
+		...base(),
+		type: 'connector',
+		from: { x: x1, y: y1 },
+		to: { x: x2, y: y2 },
+		route: 'straight',
+		stroke: 'auto',
+		strokeWidth: 2,
+		dash: false,
+		startArrow: false,
+		endArrow: true,
+		label: '',
+		...opts,
 	}
 }
 
@@ -198,6 +216,142 @@ function designDocument(): BoardElement[] {
 	return out
 }
 
+function storyMap(): BoardElement[] {
+	const pad = 48
+	const labelW = 220
+	const noteW = 180
+	const gap = 20
+	const activities: [string, string[]][] = [
+		['Find a product', ['Search', 'Browse categories']],
+		['Buy it', ['Add to cart', 'Pay']],
+		['Get it', ['Track the order', 'Return it']],
+	]
+	const colW = 2 * noteW + gap
+	const width = pad * 2 + labelW + activities.length * colW + (activities.length - 1) * 40 + 40
+	const releaseH = 300
+	const top = 180
+	const releasesY = top + 290
+	const height = releasesY + 2 * (releaseH + 40) + pad
+	const out: BoardElement[] = [
+		frame(0, 0, width, height, 'User story map'),
+		text(pad, 36, width - pad * 2, 'User story map', { fontSize: 40, bold: true }),
+		text(
+			pad,
+			96,
+			width - pad * 2,
+			'Left to right, what people do (activities and their steps). Top to bottom, the stories for each step, by release.',
+			{ textColor: MUTED },
+		),
+		text(pad, top + 40, labelW - 24, 'Activities', { fontSize: 20, bold: true }),
+		text(pad, top + 170, labelW - 24, 'Steps', { fontSize: 20, bold: true }),
+	]
+	activities.forEach(([activity, steps], i) => {
+		const x = pad + labelW + i * (colW + 40)
+		out.push(sticky(x, top, activity, '#fed7aa', colW, 110))
+		steps.forEach((step, j) => {
+			const sx = x + j * (noteW + gap)
+			out.push(sticky(sx, top + 140, step, '#bae6fd', noteW, 110))
+			out.push(sticky(sx, releasesY + 60, '', '#fef08a', noteW, 110))
+		})
+	})
+	;['Release 1 (MVP)', 'Release 2'].forEach((name, i) => {
+		const y = releasesY + i * (releaseH + 40)
+		out.push(frame(pad, y, width - pad * 2, releaseH, name, i ? '#f8fafc' : '#f0fdf4'))
+		out.push(text(pad + 20, y + 20, labelW - 40, i ? 'Next' : 'The smallest useful version', { textColor: MUTED }))
+	})
+	return out
+}
+
+function priorityMatrix(): BoardElement[] {
+	const pad = 48
+	const axis = 80
+	const cell = 520
+	const gap = 16
+	const left = pad + axis
+	const top = 180
+	const width = left + cell * 2 + gap + pad + 260
+	const height = top + cell * 2 + gap + axis + pad
+	const quadrants: [string, string, string, number, number][] = [
+		['Quick wins', 'High impact, little effort: do these first.', '#f0fdf4', 0, 0],
+		['Big bets', 'High impact, a lot of effort: plan them.', '#eff6ff', 1, 0],
+		['Fill-ins', 'Little impact, little effort: when there is time.', '#fefce8', 0, 1],
+		['Money pits', 'Little impact, a lot of effort: avoid them.', '#fef2f2', 1, 1],
+	]
+	const out: BoardElement[] = [
+		frame(0, 0, width, height, 'Priority matrix'),
+		text(pad, 36, width - pad * 2, 'Priority matrix: impact and effort', { fontSize: 40, bold: true }),
+		text(pad, 96, width - pad * 2, 'Write the ideas on sticky notes and drag each one to where it belongs.', { textColor: MUTED }),
+	]
+	for (const [title, hint, tint, col, row] of quadrants) {
+		const x = left + col * (cell + gap)
+		const y = top + row * (cell + gap)
+		out.push(frame(x, y, cell, cell, title, tint))
+		out.push(text(x + 20, y + 20, cell - 40, hint, { textColor: MUTED }))
+	}
+	// axis labels: impact up the left side (turned), effort along the bottom
+	const impact = text(left - axis / 2 - 140, top + cell + gap / 2 - 18, 280, 'Impact →', { fontSize: 22, bold: true })
+	out.push({ ...impact, align: 'center', rotation: 270 })
+	out.push({
+		...text(left, top + cell * 2 + gap + 24, cell * 2 + gap, 'Effort →', { fontSize: 22, bold: true }),
+		align: 'center',
+	})
+	const side = left + cell * 2 + gap + 40
+	out.push(text(side, top, 220, 'Ideas to sort', { fontSize: 20, bold: true }))
+	out.push(sticky(side, top + 50, '', '#fef08a'))
+	out.push(sticky(side, top + 250, '', '#fef08a'))
+	return out
+}
+
+function sequenceDiagram(): BoardElement[] {
+	const pad = 48
+	const top = 180
+	const colW = 280
+	const boxW = 200
+	const participants: [string, 'rect' | 'cylinder'][] = [
+		['User', 'rect'],
+		['Web app', 'rect'],
+		['API', 'rect'],
+		['Database', 'cylinder'],
+	]
+	const messages: [number, number, string, boolean][] = [
+		[0, 1, 'Sign in', false],
+		[1, 2, 'POST /login', false],
+		[2, 3, 'Find the user', false],
+		[3, 2, 'User', true],
+		[2, 1, 'Session', true],
+		[1, 0, 'Home page', true],
+	]
+	const firstMessage = top + 150
+	const step = 80
+	const bottom = firstMessage + messages.length * step + 20
+	const width = pad * 2 + participants.length * colW - (colW - boxW)
+	const height = bottom + pad + 40
+	const out: BoardElement[] = [
+		frame(0, 0, width, height, 'Sequence diagram'),
+		text(pad, 36, width - pad * 2, 'Sequence diagram: Sign in', { fontSize: 40, bold: true }),
+		text(pad, 96, width - pad * 2, 'Rename the participants, then edit the messages: arrows are calls, dashed ones are replies.', {
+			textColor: MUTED,
+		}),
+	]
+	const lifeline = (i: number) => pad + i * colW + boxW / 2
+	participants.forEach(([name, kind], i) => {
+		// each participant and its lifeline move together
+		const group = newId()
+		const box = shape(kind, pad + i * colW, top, boxW, kind === 'cylinder' ? 100 : 70, name, kind === 'cylinder' ? '#f5f3ff' : '#eff6ff')
+		const life = line(lifeline(i), top + (kind === 'cylinder' ? 100 : 70), lifeline(i), bottom, {
+			dash: true,
+			endArrow: false,
+			stroke: '#9ca3af',
+		})
+		out.push({ ...box, groups: [group] }, { ...life, groups: [group] })
+	})
+	messages.forEach(([from, to, label, reply], i) => {
+		const y = firstMessage + i * step
+		out.push(line(lifeline(from), y, lifeline(to), y, { label, dash: reply }))
+	})
+	return out
+}
+
 export const TEMPLATES: Template[] = [
 	{
 		id: 'retro-ssc',
@@ -244,5 +398,23 @@ export const TEMPLATES: Template[] = [
 		name: 'Design document',
 		description: 'Context, goals, proposal, alternatives, risks and a decision log, with room for diagrams and review comments.',
 		build: designDocument,
+	},
+	{
+		id: 'story-map',
+		name: 'User story map',
+		description: 'Activities and their steps from left to right, and the stories for each step by release.',
+		build: storyMap,
+	},
+	{
+		id: 'priority-matrix',
+		name: 'Priority matrix',
+		description: 'Impact and effort in four quadrants: quick wins, big bets, fill-ins and money pits.',
+		build: priorityMatrix,
+	},
+	{
+		id: 'sequence-diagram',
+		name: 'Sequence diagram',
+		description: 'Participants with their lifelines, and the calls and replies between them in order.',
+		build: sequenceDiagram,
 	},
 ]

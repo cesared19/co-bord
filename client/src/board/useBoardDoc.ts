@@ -14,6 +14,8 @@ export interface PresenceState {
 	editing: string | null
 	/** The part of the board on their screen, in board units, for following them. */
 	view?: { x: number; y: number; w: number; h: number }
+	/** Laser strokes being drawn, as flat x, y lists in board units; they fade on the drawer's side. */
+	laser?: number[][] | null
 }
 
 export interface Peer extends PresenceState {
@@ -118,6 +120,7 @@ function usePeers(provider: HocuspocusProvider, userId: number): Peer[] {
 					selection: presence.selection ?? [],
 					editing: presence.editing ?? null,
 					view: presence.view,
+					laser: presence.laser ?? null,
 				})
 			})
 			setPeers(list)

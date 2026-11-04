@@ -11,7 +11,8 @@ import {
 	shapePath,
 	textInsets,
 } from './geometry'
-import type { ConnectorElement, FrameElement, TextBox } from './types'
+import { inkPath } from './ink'
+import type { ConnectorElement, DrawElement, FrameElement, TextBox } from './types'
 
 const FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
 export const LINE_HEIGHT = 1.3
@@ -523,5 +524,51 @@ export const FrameView = memo(function FrameView({
 				)}
 			</div>
 		</>
+	)
+})
+
+/**
+ * A pen or highlighter stroke. Only the line takes clicks (with some room around thin ones), so a long stroke
+ * doesn't cover what's under its box.
+ */
+export const DrawView = memo(function DrawView({ el, dark }: { el: DrawElement; dark: boolean }) {
+	const d = inkPath(el.points)
+	const color = resolveStroke(el.stroke, dark)
+	return (
+		<svg
+			width={el.w}
+			height={el.h}
+			viewBox={`0 0 ${el.vw} ${el.vh}`}
+			preserveAspectRatio="none"
+			style={{
+				position: 'absolute',
+				left: el.x,
+				top: el.y,
+				overflow: 'visible',
+				pointerEvents: 'none',
+				...(el.rotation ? { transform: `rotate(${el.rotation}deg)` } : {}),
+			}}
+		>
+			<path
+				d={d}
+				fill="none"
+				stroke={color}
+				strokeOpacity={el.highlighter ? 0.4 : 1}
+				strokeWidth={el.strokeWidth}
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				pointerEvents="none"
+			/>
+			<path
+				data-el={el.id}
+				d={d}
+				fill="none"
+				stroke="transparent"
+				strokeWidth={Math.max(el.strokeWidth, 14)}
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				style={{ pointerEvents: 'stroke', cursor: 'move' }}
+			/>
+		</svg>
 	)
 })

@@ -36,6 +36,10 @@ interface Box {
 	done?: boolean
 	/** The Jira issue created for this card, with its status as last checked. */
 	issue?: JiraIssue
+	/** Can't be moved, resized, edited or deleted until unlocked; a click still selects it. */
+	locked?: boolean
+	/** The groups it belongs to, outermost first: a click selects the outermost one, a double-click goes in. */
+	groups?: string[]
 }
 
 export interface JiraIssue {
@@ -96,6 +100,8 @@ export interface ConnectorElement {
 	startArrow: boolean
 	endArrow: boolean
 	label: string
+	locked?: boolean
+	groups?: string[]
 }
 
 export type MediaKind = 'image' | 'video' | 'pdf' | 'youtube' | 'drive' | 'vimeo' | 'link' | 'confluence'
@@ -126,10 +132,26 @@ export interface FrameElement extends Box {
 	fill: string
 }
 
+/**
+ * A pen or highlighter stroke. `points` are x, y pairs in a `vw` x `vh` area, the box's size when it was drawn,
+ * stretched to the box when it's resized.
+ */
+export interface DrawElement extends Box {
+	type: 'draw'
+	points: number[]
+	vw: number
+	vh: number
+	/** A hex color, or 'auto' for the board's foreground. */
+	stroke: string
+	strokeWidth: number
+	/** See-through, wide and below everything but frames. */
+	highlighter?: boolean
+}
+
 /** Elements with text: shapes, sticky notes and text. */
 export type TextBox = ShapeElement | StickyElement | TextElement
 /** Every element with a position and a size. */
-export type BoxElement = TextBox | MediaElement | FrameElement
+export type BoxElement = TextBox | MediaElement | FrameElement | DrawElement
 export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 export type NewBox = DistributiveOmit<TextBox, 'id' | 'z' | 'x' | 'y'>
 export type BoardElement = BoxElement | ConnectorElement
@@ -156,7 +178,14 @@ export interface Camera {
 	zoom: number
 }
 
-export type Tool = 'select' | 'hand' | 'sticky' | 'text' | 'shape' | 'connector' | 'frame' | 'comment'
+export type Tool = 'select' | 'hand' | 'sticky' | 'text' | 'shape' | 'connector' | 'frame' | 'comment' | 'draw'
+
+/** What the draw tool does. Laser strokes aren't kept: everyone sees them fade away in a moment. */
+export type InkMode = 'pen' | 'highlighter' | 'eraser' | 'laser'
+
+export const INK_COLORS = ['auto', '#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#a855f7', '#ec4899']
+/** Stroke widths, thin to thick, for the pen and the highlighter. */
+export const INK_WIDTHS = { pen: [2, 4, 8], highlighter: [14, 24, 36] }
 
 export const STICKY_COLORS = ['#fef08a', '#fed7aa', '#fecdd3', '#f5d0fe', '#c7d2fe', '#bae6fd', '#bbf7d0', '#e5e7eb']
 
@@ -219,5 +248,6 @@ export const isFrame = (el: BoardElement | undefined): el is FrameElement => el?
 /** Light tints for frames; 'auto' follows the theme. */
 export const FRAME_COLORS = ['auto', '#f8fafc', '#fef2f2', '#fff7ed', '#fefce8', '#f0fdf4', '#ecfeff', '#eff6ff', '#f5f3ff', '#fdf2f8']
 
-/** Frames first, then everything else, each by z. */
-export const drawOrder = (a: BoardElement, b: BoardElement) => (a.type === 'frame' ? 0 : 1) - (b.type === 'frame' ? 0 : 1) || a.z - b.z
+const layer = (el: BoardElement) => (el.type === 'frame' ? 0 : el.type === 'draw' && el.highlighter ? 1 : 2)
+/** Frames first, then highlighter strokes, then everything else, each by z. */
+export const drawOrder = (a: BoardElement, b: BoardElement) => layer(a) - layer(b) || a.z - b.z

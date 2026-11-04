@@ -14,7 +14,8 @@ import {
 } from './geometry'
 import { MEDIA_HEADER, mediaUrl, safeUrl } from './media'
 import { loadPdf, renderPage } from './pdf'
-import { type BoardElement, drawOrder, type FrameElement, type MediaElement, type TextBox } from './types'
+import { inkPath } from './ink'
+import { type BoardElement, type DrawElement, drawOrder, type FrameElement, type MediaElement, type TextBox } from './types'
 
 const FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
 const PADDING = 40
@@ -51,18 +52,32 @@ export async function renderPng(elements: ElementMap, dark: boolean, ids?: strin
 		if (el.type === 'connector') drawConnector(ctx, el, elements, dark)
 		else if (el.type === 'media') drawMedia(ctx, el, pictures.get(el.id) ?? null, dark)
 		else if (el.type === 'frame') drawFrame(ctx, el, dark)
+		else if (el.type === 'draw') drawInk(ctx, el, dark)
 		else drawBox(ctx, el, dark)
 	}
 	return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
 }
 
 /** Moves the canvas to an element's top left corner, turned with it. */
-function place(ctx: CanvasRenderingContext2D, el: TextBox | MediaElement) {
+function place(ctx: CanvasRenderingContext2D, el: TextBox | MediaElement | DrawElement) {
 	ctx.translate(el.x, el.y)
 	if (!el.rotation) return
 	ctx.translate(el.w / 2, el.h / 2)
 	ctx.rotate((el.rotation * Math.PI) / 180)
 	ctx.translate(-el.w / 2, -el.h / 2)
+}
+
+function drawInk(ctx: CanvasRenderingContext2D, el: DrawElement, dark: boolean) {
+	ctx.save()
+	place(ctx, el)
+	ctx.scale(el.w / (el.vw || 1), el.h / (el.vh || 1))
+	ctx.strokeStyle = resolveStroke(el.stroke, dark)
+	ctx.globalAlpha = el.highlighter ? 0.4 : 1
+	ctx.lineWidth = el.strokeWidth
+	ctx.lineCap = 'round'
+	ctx.lineJoin = 'round'
+	ctx.stroke(new Path2D(inkPath(el.points)))
+	ctx.restore()
 }
 
 function drawBox(ctx: CanvasRenderingContext2D, el: TextBox, dark: boolean) {
