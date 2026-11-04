@@ -9,12 +9,13 @@ import { useUser } from '../lib/auth'
 import { useIsDark } from '../lib/theme'
 import { Canvas } from './Canvas'
 import { download, renderPng } from './exportPng'
+import { exportPdf, framesInOrder } from './pdfExport'
 import { PresenceAvatars } from './Presence'
 import { BoardEnvContext, useConfluenceInfo, useJiraInfo } from './confluence'
 import { FollowBoardButton, useFollows } from './follows'
 import type { Member } from '../lib/api'
 import { useSparkyInfo } from './sparky'
-import { type BoardConnection, type Peer, useBoardConnection, useBoardDoc } from './useBoardDoc'
+import { type BoardConnection, useBoardConnection, useBoardDoc } from './useBoardDoc'
 
 export default function BoardPage() {
 	const { boardId = '' } = useParams()
@@ -115,7 +116,10 @@ function BoardSession({
 	const [params] = useSearchParams()
 	const focusId = params.get('el')
 	const [copied, setCopied] = useState(false)
-	const [jumpTo, setJumpTo] = useState<Peer | null>(null)
+	/** The teammate whose view this person follows. */
+	const [following, setFollowing] = useState<number | null>(null)
+	const [exportOpen, setExportOpen] = useState(false)
+	const [exporting, setExporting] = useState(false)
 
 	useEffect(() => {
 		document.title = `${board.name} · co-bord`
@@ -124,10 +128,22 @@ function BoardSession({
 		}
 	}, [board.name])
 
+	const fileName = board.name.replace(/[\\/:*?"<>|]+/g, '_')
 	const exportPng = useCallback(async () => {
 		const blob = await renderPng(elements, dark)
-		if (blob) download(blob, `${board.name.replace(/[\\/:*?"<>|]+/g, '_')}.png`)
-	}, [elements, dark, board.name])
+		if (blob) download(blob, `${fileName}.png`)
+	}, [elements, dark, fileName])
+	const downloadPdf = async (perFrame: boolean) => {
+		setExportOpen(false)
+		setExporting(true)
+		try {
+			const blob = await exportPdf(elements, board.name, perFrame)
+			if (blob) download(blob, `${fileName}.pdf`)
+		} finally {
+			setExporting(false)
+		}
+	}
+	const frameCount = useMemo(() => framesInOrder(elements).length, [elements])
 
 	async function copyLink() {
 		const url = window.location.href
@@ -180,7 +196,11 @@ function BoardSession({
 					)}
 					<NotificationsBell />
 					<FollowBoardButton follows={follows} />
-					<PresenceAvatars peers={peers} onPick={(peer) => setJumpTo({ ...peer })} />
+					<PresenceAvatars
+						peers={peers}
+						following={following}
+						onPick={(peer) => setFollowing(following === peer.clientId ? null : peer.clientId)}
+					/>
 					<Avatar name={user.displayName} color={user.color} size={30} title={`${user.displayName} (you)`} />
 					<button
 						type="button"
@@ -191,16 +211,48 @@ function BoardSession({
 						{copied ? <Check size={18} /> : <Link2 size={18} />}
 						<span className="sr-only">Copy link</span>
 					</button>
-					<button
-						type="button"
-						onClick={exportPng}
-						disabled={!elements.size}
-						title="Download as PNG"
-						className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
-					>
-						<Download size={18} />
-						<span className="sr-only">Download as PNG</span>
-					</button>
+					<div className="relative">
+						<button
+							type="button"
+							onClick={() => setExportOpen(!exportOpen)}
+							disabled={!elements.size || exporting}
+							aria-expanded={exportOpen}
+							title="Download"
+							className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
+						>
+							<Download size={18} className={exporting ? 'animate-pulse' : ''} />
+							<span className="sr-only">Download</span>
+						</button>
+						{exportOpen && (
+							<div
+								role="menu"
+								className="absolute top-9 right-0 z-40 w-60 rounded-xl border border-gray-200 bg-white p-1 text-sm shadow-lg dark:border-gray-700 dark:bg-gray-900"
+							>
+								{[
+									{ label: 'PNG image', hint: 'The whole board', run: () => (setExportOpen(false), void exportPng()) },
+									{ label: 'PDF', hint: 'The whole board on one page', run: () => void downloadPdf(false) },
+									{
+										label: 'PDF, a page per frame',
+										hint: frameCount ? `${frameCount} ${frameCount === 1 ? 'page' : 'pages'}, in reading order` : 'The board has no frames',
+										run: () => void downloadPdf(true),
+										disabled: !frameCount,
+									},
+								].map((item) => (
+									<button
+										key={item.label}
+										type="button"
+										role="menuitem"
+										disabled={item.disabled}
+										onClick={item.run}
+										className="block w-full rounded-lg px-3 py-2 text-left hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"
+									>
+										<span className="block font-medium">{item.label}</span>
+										<span className="block text-xs text-gray-500">{item.hint}</span>
+									</button>
+								))}
+							</div>
+						)}
+					</div>
 				</div>
 			</header>
 			<div className="relative min-h-0 flex-1">
@@ -222,7 +274,8 @@ function BoardSession({
 							readOnly={readOnly}
 							boardId={board.id}
 							dark={dark}
-							jumpTo={jumpTo}
+							following={following}
+							onFollow={setFollowing}
 							user={user}
 							boardName={board.name}
 							projectId={board.projectId}

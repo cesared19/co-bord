@@ -6,10 +6,25 @@ import { useServerClock, useSession } from './session'
 import { TemplatePicker } from './TemplatePicker'
 import { boardLinks, canWriteSparky, type SparkyInfo, useLinkResults } from './sparky'
 import { CoveragePanel, LinkBadges, LinkEditor, LinksPopover } from './SparkyLinks'
-import { BookOpenText, FlaskConical, Grid3x3, History, Map as MapIcon, MessageSquare, RotateCw, Zap } from 'lucide-react'
-import { anchorFor, CommentPins, CommentsPanel, Composer, pinPoint, ThreadPopover, useComments } from './Comments'
+import {
+	BookOpenText,
+	ChevronLeft,
+	ChevronRight,
+	Eye,
+	FlaskConical,
+	Grid3x3,
+	History,
+	Map as MapIcon,
+	MessageSquare,
+	Presentation,
+	RotateCw,
+	Zap,
+} from 'lucide-react'
+import { anchorFor, CommentPins, CommentsPanel, Composer, pinPoint, type Thread, ThreadPopover, useComments } from './Comments'
 import { HistoryPanel } from './HistoryPanel'
 import { MediaSync, MediaSyncContext } from './mediaSync'
+import { framesInOrder } from './pdfExport'
+import { type Match, SearchBar } from './Search'
 import { GenerateTestsDialog } from './GenerateTestsDialog'
 import { IssueBadges } from './IssueBadges'
 import { RulesPanel } from './RulesPanel'
@@ -32,6 +47,7 @@ import {
 	containsRotated,
 	elementBounds,
 	type ElementMap,
+	clampZoom,
 	fitCamera,
 	intersects,
 	rectFromPoints,
@@ -142,7 +158,9 @@ interface Props {
 	boardId: string
 	dark: boolean
 	/** Centers the view on a teammate's cursor. */
-	jumpTo: Peer | null
+	/** The teammate whose view this person follows (their awareness client id). */
+	following: number | null
+	onFollow: (clientId: number | null) => void
 	user: { id: number; displayName: string }
 	boardName: string
 	projectId: number
@@ -179,7 +197,8 @@ export function Canvas({
 	readOnly,
 	boardId,
 	dark,
-	jumpTo,
+	following,
+	onFollow,
 	user,
 	boardName,
 	projectId,
@@ -250,12 +269,10 @@ export function Canvas({
 		return () => clearTimeout(id)
 	}, [boardId, camera])
 
-	useEffect(() => {
-		const target = jumpTo && peers.find((p) => p.clientId === jumpTo.clientId)?.cursor
-		if (target) setCamera((c) => ({ ...c, x: size.w / 2 - target.x * c.zoom, y: size.h / 2 - target.y * c.zoom }))
-		// only when a teammate is picked, not on every cursor move
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [jumpTo])
+	/** Stops following someone when the person moves the view themselves; set below. */
+	const stopFollowRef = useRef<() => void>(() => {})
+	/** Arrow keys while presenting; set below. */
+	const presentKeysRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
 
 	// drop selected ids that someone else deleted
 	const liveSelection = useMemo(() => selection.filter((id) => elements.has(id)), [selection, elements])
@@ -639,6 +656,7 @@ export function Canvas({
 
 	const zoomBy = useCallback(
 		(factor: number, at?: Point) => {
+			stopFollowRef.current()
 			const c = cameraRef.current
 			setCamera(zoomAt(c, at ?? { x: size.w / 2, y: size.h / 2 }, c.zoom * factor))
 		},
@@ -678,6 +696,7 @@ export function Canvas({
 		if (!el) return
 		const onWheel = (e: WheelEvent) => {
 			e.preventDefault()
+			stopFollowRef.current()
 			const p = localPoint(e)
 			if (e.ctrlKey || e.metaKey) {
 				const c = cameraRef.current
@@ -702,6 +721,7 @@ export function Canvas({
 		container.setPointerCapture(e.pointerId)
 
 		if (pointers.current.size === 2) {
+			stopFollowRef.current()
 			const [a, b] = [...pointers.current.values()]
 			drag.current = {
 				kind: 'pinch',
@@ -723,6 +743,7 @@ export function Canvas({
 		const panning =
 			e.button === 1 || tool === 'hand' || spaceDown.current || (e.pointerType === 'touch' && tool === 'select' && !id && !handle)
 		if (panning) {
+			stopFollowRef.current()
 			drag.current = { kind: 'pan', startScreen: screen, startCam: cameraRef.current }
 			rerender()
 			return
@@ -1067,6 +1088,110 @@ export function Canvas({
 			createBox('text', toWorld(cameraRef.current, localPoint(e)), true)
 	}
 
+	// ---------- following and presenting ----------
+
+	const [searchOpen, setSearchOpen] = useState(false)
+	const presenting = session.presenting
+	const myClient = provider.awareness?.clientID ?? -1
+	const presentingMine = !!presenting && presenting.clientId === myClient
+	/** The presentation this person stepped out of. */
+	const [leftPresentation, setLeftPresentation] = useState<string | null>(null)
+	const presenterHere = !!presenting && (presentingMine || peers.some((p) => p.clientId === presenting.clientId))
+	const followId =
+		following ?? (presenting && presenterHere && !presentingMine && leftPresentation !== presenting.id ? presenting.clientId : null)
+	const followed = followId !== null ? (peers.find((p) => p.clientId === followId) ?? null) : null
+	stopFollowRef.current =
+		followId === null
+			? () => {}
+			: () => {
+					if (following !== null) onFollow(null)
+					else if (presenting) setLeftPresentation(presenting.id)
+				}
+
+	// share the part of the board on screen, so others can follow
+	useEffect(() => {
+		if (!size.w) return
+		const id = setTimeout(
+			() =>
+				provider.setAwarenessField('view', {
+					x: -camera.x / camera.zoom,
+					y: -camera.y / camera.zoom,
+					w: size.w / camera.zoom,
+					h: size.h / camera.zoom,
+				}),
+			80,
+		)
+		return () => clearTimeout(id)
+	}, [provider, camera, size])
+
+	const followedView = followed?.view
+	useEffect(() => {
+		if (!followedView || !size.w) return
+		const zoom = clampZoom(Math.min(size.w / followedView.w, size.h / followedView.h))
+		setCamera({
+			zoom,
+			x: size.w / 2 - (followedView.x + followedView.w / 2) * zoom,
+			y: size.h / 2 - (followedView.y + followedView.h / 2) * zoom,
+		})
+	}, [followedView, size])
+
+	const slides = useMemo(() => framesInOrder(elements), [elements])
+	const [slide, setSlide] = useState(0)
+	const goSlide = (i: number) => {
+		if (!slides.length) return
+		const next = Math.min(Math.max(0, i), slides.length - 1)
+		setSlide(next)
+		fit([slides[next].id])
+	}
+	presentKeysRef.current = (e) => {
+		if (!presentingMine || selectionRef.current.length) return false
+		if (e.key === 'ArrowRight' || e.key === 'PageDown') goSlide(slide + 1)
+		else if (e.key === 'ArrowLeft' || e.key === 'PageUp') goSlide(slide - 1)
+		else return false
+		e.preventDefault()
+		return true
+	}
+	const startPresenting = () => {
+		session.session.startPresenting(
+			myClient,
+			user.displayName,
+			(provider.awareness?.getLocalState()?.user?.color as string | undefined) ?? '#c01c37',
+		)
+		document.documentElement.requestFullscreen?.().catch(() => {})
+		onFollow(null)
+		if (slides.length) goSlide(0)
+	}
+	const stopPresenting = () => {
+		session.session.stopPresenting()
+		if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+	}
+	// leaving the board ends one's own presentation
+	const presentingMineRef = useRef(presentingMine)
+	presentingMineRef.current = presentingMine
+	useEffect(
+		() => () => {
+			if (presentingMineRef.current) session.session.stopPresenting()
+		},
+		[session.session],
+	)
+
+	const searchPin = useCallback((t: Thread) => pinPoint(t, elements), [elements])
+	const goToMatch = (m: Match) => {
+		stopFollowRef.current()
+		setCamera((c) => {
+			const zoom = Math.max(c.zoom, 0.6)
+			return { zoom, x: size.w / 2 - m.at.x * zoom, y: size.h / 2 - m.at.y * zoom }
+		})
+		if (m.kind === 'element') {
+			setOpenThread(null)
+			setSelection([m.id])
+		} else {
+			setSelection([])
+			setComposer(null)
+			setOpenThread(Number(m.id))
+		}
+	}
+
 	// ---------- keyboard and clipboard ----------
 
 	useEffect(() => {
@@ -1074,6 +1199,12 @@ export function Canvas({
 			if (isTyping(e.target)) return
 			const mod = e.metaKey || e.ctrlKey
 			const key = e.key.toLowerCase()
+			if (mod && key === 'f') {
+				e.preventDefault()
+				setSearchOpen(true)
+				return
+			}
+			if (presentKeysRef.current(e)) return
 			if (e.key === ' ') {
 				spaceDown.current = true
 				e.preventDefault()
@@ -1113,18 +1244,26 @@ export function Canvas({
 			}
 			if (mod && key === '0') {
 				e.preventDefault()
+				stopFollowRef.current()
 				setCamera((c) => zoomAt(c, { x: size.w / 2, y: size.h / 2 }, 1))
 				return
 			}
 			if (mod) return
-			if (e.shiftKey && e.code === 'Digit1') return fit()
-			if (e.shiftKey && e.code === 'Digit2') return fit(selectionRef.current)
+			if (e.shiftKey && e.code === 'Digit1') {
+				stopFollowRef.current()
+				return fit()
+			}
+			if (e.shiftKey && e.code === 'Digit2') {
+				stopFollowRef.current()
+				return fit(selectionRef.current)
+			}
 			switch (e.key) {
 				case 'Delete':
 				case 'Backspace':
 					e.preventDefault()
 					return deleteSelection()
 				case 'Escape':
+					stopFollowRef.current()
 					setTool('select')
 					return select([])
 				case 'Enter':
@@ -1647,6 +1786,88 @@ export function Canvas({
 						)}
 					</div>
 				)}
+				{followed && (
+					<div className="pointer-events-none absolute inset-0 z-10 border-4" style={{ borderColor: followed.user.color }} aria-hidden />
+				)}
+				{(followed || presentingMine || (presenting && presenterHere && !presentingMine && leftPresentation === presenting.id)) && (
+					<div
+						data-ui
+						role="status"
+						className="absolute bottom-16 left-1/2 z-20 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200 bg-white py-1 pr-1 pl-3 text-sm whitespace-nowrap shadow-lg sm:bottom-3 dark:border-gray-700 dark:bg-gray-900"
+					>
+						{presentingMine ? (
+							<>
+								<Presentation size={16} className="shrink-0 text-brand-600" />
+								<span className="truncate">You're presenting</span>
+								{slides.length > 0 && (
+									<span className="flex items-center gap-0.5">
+										<button
+											type="button"
+											onClick={() => goSlide(slide - 1)}
+											disabled={slide <= 0}
+											className="rounded-full p-1 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-800"
+											title="Previous frame (←)"
+										>
+											<ChevronLeft size={16} />
+											<span className="sr-only">Previous frame</span>
+										</button>
+										<span className="text-xs tabular-nums">
+											{slide + 1} / {slides.length}
+										</span>
+										<button
+											type="button"
+											onClick={() => goSlide(slide + 1)}
+											disabled={slide >= slides.length - 1}
+											className="rounded-full p-1 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-800"
+											title="Next frame (→)"
+										>
+											<ChevronRight size={16} />
+											<span className="sr-only">Next frame</span>
+										</button>
+									</span>
+								)}
+								<button
+									type="button"
+									onClick={stopPresenting}
+									className="rounded-full bg-brand-600 px-3 py-1 text-xs font-medium text-white hover:bg-brand-700"
+								>
+									Stop presenting
+								</button>
+							</>
+						) : followed ? (
+							<>
+								<Eye size={16} className="shrink-0" style={{ color: followed.user.color }} />
+								<span className="truncate">
+									{following === null && presenting ? `${followed.user.name} is presenting` : `Following ${followed.user.name}`}
+								</span>
+								<button
+									type="button"
+									onClick={() => stopFollowRef.current()}
+									className="rounded-full px-3 py-1 text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
+								>
+									Stop (Esc)
+								</button>
+							</>
+						) : (
+							presenting && (
+								<>
+									<Presentation size={16} className="shrink-0" style={{ color: presenting.color }} />
+									<span className="truncate">{presenting.name} is presenting</span>
+									<button
+										type="button"
+										onClick={() => setLeftPresentation(null)}
+										className="rounded-full bg-brand-600 px-3 py-1 text-xs font-medium text-white hover:bg-brand-700"
+									>
+										Follow along
+									</button>
+								</>
+							)
+						)}
+					</div>
+				)}
+				{searchOpen && (
+					<SearchBar elements={elements} threads={comments.threads} pin={searchPin} onGo={goToMatch} onClose={() => setSearchOpen(false)} />
+				)}
 				{composer &&
 					(() => {
 						const p = pinPoint(composer, elements)
@@ -1697,6 +1918,19 @@ export function Canvas({
 							)}
 							<span className="sr-only sm:hidden">Comments</span>
 						</button>
+						{!readOnly && !presenting && (
+							<button
+								type="button"
+								onClick={startPresenting}
+								title={
+									slides.length ? 'Present: everyone follows your view; ← → go through the frames' : 'Present: everyone follows your view'
+								}
+								className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+							>
+								<Presentation size={16} /> <span className="hidden sm:inline">Present</span>
+								<span className="sr-only sm:hidden">Present</span>
+							</button>
+						)}
 						<button
 							type="button"
 							onClick={() => setPanel('history')}
@@ -1886,8 +2120,14 @@ export function Canvas({
 				<ZoomControls
 					zoom={camera.zoom}
 					onZoom={(f) => zoomBy(f)}
-					onReset={() => setCamera((c) => zoomAt(c, { x: size.w / 2, y: size.h / 2 }, 1))}
-					onFit={() => fit()}
+					onReset={() => {
+						stopFollowRef.current()
+						setCamera((c) => zoomAt(c, { x: size.w / 2, y: size.h / 2 }, 1))
+					}}
+					onFit={() => {
+						stopFollowRef.current()
+						fit()
+					}}
 				>
 					<button
 						type="button"
@@ -1930,7 +2170,10 @@ export function Canvas({
 						viewport={size}
 						peers={peers}
 						dark={dark}
-						onMove={(p) => setCamera((c) => ({ ...c, x: size.w / 2 - p.x * c.zoom, y: size.h / 2 - p.y * c.zoom }))}
+						onMove={(p) => {
+							stopFollowRef.current()
+							setCamera((c) => ({ ...c, x: size.w / 2 - p.x * c.zoom, y: size.h / 2 - p.y * c.zoom }))
+						}}
 					/>
 				)}
 				{!readOnly && selectedEls.length > 0 && selectionBounds && !d && editing === null && (

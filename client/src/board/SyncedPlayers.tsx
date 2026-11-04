@@ -71,7 +71,7 @@ function useSyncedPlayback(controls: Controls | null, { state, update, handle }:
 			if (p.playing === state.playing && Math.abs(p.time - expectedTime(state)) < 1) return
 			update({ playing: p.playing, time: Math.max(0, p.time), at: serverNow() })
 		},
-		[state?.sync, update],
+		[state, update],
 	)
 
 	const join = () => {

@@ -1,6 +1,6 @@
 # co-bord
 
-Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.9.0 está en `main`; 0.10.0 (comentarios, historial de versiones, videos y PDF sincronizados) en desarrollo.
+Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.10.0 está en `main`; 0.11.0 (seguir y presentar, búsqueda, exportar PDF) en desarrollo.
 
 **Repositorio:** https://github.com/cesared19/co-bord.
 
@@ -23,6 +23,9 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
   - Comentarios (`Comments.tsx`, `routes/comments.ts`): `comment_threads` (en un elemento con x, y desde su esquina, o en un punto) y `comments`; cualquiera que abre el tablero comenta (viewers incluidos), autores editan, autores y editores borran (borrar el primero borra el hilo), resolver/reabrir (responder reabre). Menciones y respuestas notifican (`kind = 'comment'`, `element_id = 'comment:<id>'`, que `?el=` abre). Al cambiar, el servidor manda `comments` por `broadcastStateless` (`ctx.broadcastBoard`) y los clientes recargan. Herramienta Comment (C, también para viewers), pines en pantalla (`pinPoint` gira con el elemento), `Composer`, `ThreadPopover`, `CommentsPanel`.
   - Historial (`HistoryPanel.tsx`, `routes/versions.ts`): `board_versions` guarda el documento completo; `save()` en collab.ts agrega una automática si la última tiene más de 10 min (`versionEveryMs`), solo con ediciones de personas; las automáticas se borran a los 30 días (housekeeping). Con nombre, renombrar (deja de ser automática), borrar y restaurar son de editores; restaurar guarda antes el estado actual ("Before restoring …") y reemplaza `elements` por conexión directa (`ctx.restoreBoard`, origen `local` sin `ruleDepth`: no dispara reglas ni notificaciones). La vista previa dibuja la versión con `renderPng` en el navegador.
   - Medios sincronizados (`mediaSync.ts`, `SyncedPlayers.tsx`): `Y.Map('media')` por elemento con `sync`, `playing`, `time`, `at` (hora del servidor) y `page`, fuera del deshacer; solo editores lo cambian. Video subido con `<video>`; YouTube con la API de mensajes del widget (`enablejsapi=1`) y Vimeo con su API de `postMessage`, sin scripts externos; PDF con la página compartida. Los eventos que ya coinciden con el estado compartido no se vuelven a publicar (evita el eco); deriva corregida cada 5 s; si el navegador bloquea reproducir, aparece "Click to watch along". YouTube y Vimeo no se probaron contra los servicios reales.
+  - Seguir y presentar: cada cliente publica en awareness `view` (el rectángulo del tablero en su pantalla); seguir a alguien (clic en su avatar, `following` en `BoardPage`) ajusta la cámara a su `view`. `Y.Map('session')` guarda `presenting` (`id`, `clientId`, nombre, color): todos lo siguen salvo que se salgan (`leftPresentation` por `id`) o el presentador ya no esté. Mover la vista a mano (rueda, arrastre, pinch, zoom, ajustar, minimapa) o Esc deja de seguir (`stopFollowRef`). El presentador recorre los marcos con ← → (`framesInOrder`, orden de lectura) y pide pantalla completa; al salir del tablero termina su presentación.
+  - Búsqueda (`Search.tsx`, Ctrl F): texto, `label`, `title` y `name` de los elementos y el texto de los comentarios; Enter siguiente, Shift Enter anterior.
+  - PDF (`pdfExport.ts`): el PDF se escribe a mano (sin librerías): una página A4 horizontal por imagen JPEG (`renderPng` en claro, pasado a JPEG) con el título en Helvetica-Bold (WinAnsi, otros caracteres como `?`). Todo el tablero en una página o un marco por página.
   - Minimapa (`Minimap.tsx`): canvas 200×132 abajo a la derecha, con el botón junto al zoom (`co-bord:minimap`, por defecto visible desde 768 px).
   - `useBoardDoc.ts`: el proveedor se crea en un efecto (`useBoardConnection`), no en render.
   - Marcos (`FrameView`): el área deja pasar los clics al tablero; se eligen y arrastran por el título (tamaño fijo en pantalla hasta 60 % de zoom). Mover, copiar, duplicar y empujar con flechas incluye lo que está completamente dentro (`withFrameContents`). La selección por recuadro solo toma un marco si lo cubre entero. Los conectores no se enganchan a marcos.
@@ -69,9 +72,9 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
 ## Plan
 
 1. ~~Lienzo: formas de flujo, notas, texto, conectores, deshacer, exportar PNG~~ (0.1.0)
-2. ~~Tiempo real: cursores, selecciones, cambios en vivo~~ (0.1.0, salvo "seguir a alguien")
+2. ~~Tiempo real: cursores, selecciones, cambios en vivo~~ (0.1.0); ~~seguir a alguien y presentar~~ (0.11.0)
 3. ~~Embeds: imágenes, videos (YouTube, Drive, Vimeo, subidos) y PDF como bloques redimensionables~~ (0.2.0)
-4. Plantillas: retrospectiva (columnas, votos, temporizador), workflow, documento de diseño; marcos (frames)
+4. ~~Plantillas: retrospectiva (columnas, votos, temporizador), workflow, documento de diseño; marcos (frames)~~ (0.3.0)
 5. ~~SparkyTC (token por proyecto, bloques vinculados a casos/suites/planes con su último resultado, reporte de cobertura)~~ (0.4.0) ~~y Confluence (embeber y publicar)~~ (0.5.0)
 6. ~~Automatizaciones: notificaciones y retro guiada~~ (0.6.0); ~~reglas de tarjetas y generar pruebas~~ (0.7.0, con SparkyTC 2.3.0)
 7. ~~Lienzo: guías, cuadrícula, rotación, redimensionar varios y minimapa~~ (0.9.0); ~~comentarios, historial de versiones y sincronizar videos y PDF~~ (0.10.0)

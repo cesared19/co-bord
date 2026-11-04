@@ -69,7 +69,7 @@ export function RemoteSelections({ peers, elements, camera }: { peers: Peer[]; e
 }
 
 /** Everyone on the board; each user once even with several tabs open. */
-export function PresenceAvatars({ peers, onPick }: { peers: Peer[]; onPick: (peer: Peer) => void }) {
+export function PresenceAvatars({ peers, following, onPick }: { peers: Peer[]; following: number | null; onPick: (peer: Peer) => void }) {
 	const unique = [...new Map(peers.map((p) => [p.user.id, p])).values()]
 	if (!unique.length) return null
 	const shown = unique.slice(0, 5)
@@ -80,8 +80,11 @@ export function PresenceAvatars({ peers, onPick }: { peers: Peer[]; onPick: (pee
 					key={peer.user.id}
 					type="button"
 					onClick={() => onPick(peer)}
-					className="rounded-full"
-					title={`${peer.user.name}: go to cursor`}
+					aria-pressed={following === peer.clientId}
+					className={`rounded-full ${following === peer.clientId ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-gray-950' : ''}`}
+					style={following === peer.clientId ? ({ '--tw-ring-color': peer.user.color } as React.CSSProperties) : undefined}
+					title={following === peer.clientId ? `Following ${peer.user.name}: click to stop` : `Follow ${peer.user.name}'s view`}
+					aria-label={following === peer.clientId ? `Stop following ${peer.user.name}` : `Follow ${peer.user.name}'s view`}
 				>
 					<Avatar name={peer.user.name} color={peer.user.color} size={30} />
 				</button>
