@@ -1,4 +1,4 @@
-import { LINE_HEIGHT } from './ElementView'
+import { LINE_HEIGHT, MIN_FONT } from './ElementView'
 import {
 	arrowHead,
 	connectorGeometry,
@@ -93,11 +93,13 @@ function drawBox(ctx: CanvasRenderingContext2D, el: TextBox, dark: boolean) {
 		const inset = textInsets(el)
 		const innerW = el.w - inset.left - inset.right
 		const innerH = el.h - inset.top - inset.bottom
-		ctx.font = `${el.bold ? 700 : 400} ${el.fontSize}px ${FONT}`
+		// notes and shapes shrink their text to fit, as on the board
+		const fontSize = el.type === 'text' ? el.fontSize : fittedSize(ctx, el, innerW, innerH)
+		ctx.font = `${el.bold ? 700 : 400} ${fontSize}px ${FONT}`
 		ctx.fillStyle = resolveTextColor(el, dark)
 		ctx.textBaseline = 'top'
 		ctx.textAlign = el.align
-		const lineH = el.fontSize * LINE_HEIGHT
+		const lineH = fontSize * LINE_HEIGHT
 		const lines = wrap(ctx, el.text, innerW)
 		const total = lines.length * lineH
 		let y = inset.top + (el.type === 'text' ? 0 : Math.max(0, (innerH - total) / 2))
@@ -107,7 +109,7 @@ function drawBox(ctx: CanvasRenderingContext2D, el: TextBox, dark: boolean) {
 			ctx.rect(inset.left - 2, inset.top - 2, innerW + 4, innerH + 4)
 			ctx.clip()
 		}
-		const pad = (lineH - el.fontSize) / 2
+		const pad = (lineH - fontSize) / 2
 		for (const line of lines) {
 			ctx.fillText(line, x, y + pad)
 			y += lineH
@@ -283,6 +285,26 @@ function ellipsis(ctx: CanvasRenderingContext2D, text: string, width: number): s
 	let out = text
 	while (out.length > 1 && ctx.measureText(`${out}…`).width > width) out = out.slice(0, -1)
 	return `${out}…`
+}
+
+/** The size at which the text fits the box with whole words on each line (as on the board), down to MIN_FONT. */
+function fittedSize(ctx: CanvasRenderingContext2D, el: TextBox, width: number, height: number): number {
+	const fits = (size: number) => {
+		ctx.font = `${el.bold ? 700 : 400} ${size}px ${FONT}`
+		const words = el.text.split(/\s+/).filter(Boolean)
+		if (words.some((w) => ctx.measureText(w).width > width)) return false
+		return wrap(ctx, el.text, width).length * size * LINE_HEIGHT <= height
+	}
+	if (fits(el.fontSize)) return el.fontSize
+	let lo = MIN_FONT
+	let hi = el.fontSize
+	if (!fits(lo)) return MIN_FONT
+	while (hi - lo > 0.5) {
+		const mid = (lo + hi) / 2
+		if (fits(mid)) lo = mid
+		else hi = mid
+	}
+	return Math.floor(lo * 2) / 2
 }
 
 function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {

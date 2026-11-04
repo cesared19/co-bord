@@ -1,5 +1,5 @@
 import { CircleCheck, CircleDashed, CircleX, ExternalLink, FlaskConical, Search, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { elementBounds, type ElementMap, frameContents, toScreen } from './geometry'
 import {
@@ -218,6 +218,9 @@ export function LinkBadges({
 }
 
 /** The tests linked to one element, with their latest results and links to SparkyTC. */
+/** Popovers start right of the side toolbar so they don't cover it. */
+const TOOLBAR_CLEAR = 72
+
 export function LinksPopover({
 	el,
 	results,
@@ -235,15 +238,31 @@ export function LinksPopover({
 	buildNumber?: string
 	onClose: () => void
 }) {
+	const ref = useRef<HTMLDivElement>(null)
+	const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+	const b = el.type === 'connector' ? null : elementBounds(el, elements)
+	const below = b ? toScreen(camera, { x: b.x, y: b.y + b.h }) : { x: 0, y: 0 }
+	const above = b ? toScreen(camera, { x: b.x, y: b.y }) : { x: 0, y: 0 }
+	// beside the toolbar and inside the board; above the element when there's no room below
+	useLayoutEffect(() => {
+		const node = ref.current
+		const parent = node?.offsetParent as HTMLElement | null
+		if (!node || !parent) return
+		const w = node.offsetWidth
+		const h = node.offsetHeight
+		const left = Math.min(Math.max(TOOLBAR_CLEAR, below.x), Math.max(TOOLBAR_CLEAR, parent.clientWidth - w - 8))
+		let top = below.y + 18
+		if (top + h > parent.clientHeight - 8) top = above.y - h - 8 >= 8 ? above.y - h - 8 : Math.max(8, parent.clientHeight - h - 8)
+		setPos({ left, top })
+	}, [below.x, below.y, above.y])
 	if (el.type === 'connector' || !el.links?.length) return null
-	const b = elementBounds(el, elements)
-	const p = toScreen(camera, { x: b.x, y: b.y + b.h })
 	return (
 		<div
+			ref={ref}
 			data-ui
 			onPointerDown={(e) => e.stopPropagation()}
 			className="pointer-events-auto absolute z-30 w-80 max-w-[calc(100vw-32px)] rounded-xl border border-gray-200 bg-white p-2 text-sm shadow-lg dark:border-gray-700 dark:bg-gray-900"
-			style={{ left: Math.max(8, p.x), top: p.y + 18 }}
+			style={pos ?? { left: Math.max(TOOLBAR_CLEAR, below.x), top: below.y + 18, visibility: 'hidden' }}
 		>
 			<div className="mb-1 flex items-center justify-between px-1">
 				<span className="text-xs font-medium text-gray-500">Tests{buildNumber ? ` · build ${buildNumber}` : ''}</span>
