@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.7.1)
+## Features (0.8.0)
 
 ### Boards
 
@@ -87,6 +87,9 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 -  **Own accounts**: on the first start co-bord asks for the admin account. Admins create the other accounts, reset passwords and create projects. Everyone changes their name and password in **Account**.
 -  **Projects** hold boards and have members with a role: **Owner** (manages members, deletes boards), **Editor** (creates and edits boards) or **Viewer** (only looks). Projects a user is not in are hidden.
+-  Changing someone's role, removing them from a project, resetting their password or deleting them takes effect on the boards they have open right away: the board reopens read-only, or tells them they no longer have access.
+-  **Sign-in protection**: after 5 failed sign-ins within 15 minutes for a username, or from an address, sign-ins for it wait 15 minutes. **Users** shows who is locked, and admins can unlock them.
+-  Elements with uploaded files pasted into another project's board bring a copy of the files, so everyone in that project sees them.
 
 ### Keyboard shortcuts
 
@@ -136,10 +139,11 @@ co-bord is served on port 3200 (`APP_PORT`). Open it and create the admin accoun
 | `MAX_UPLOAD_MB` | Largest file that can be uploaded, 500 MB by default |
 | `ANTHROPIC_API_KEY` | Optional: lets Claude (Claude Opus 5.5) write retrospective summaries |
 | `PUBLIC_URL` | Optional: the address people open co-bord at, for links in Jira issues and test cases (otherwise taken from requests) |
+| `UNUSED_FILES_DAYS` | Days an uploaded file no board uses is kept before it's deleted, 30 by default |
 | `RULE_CHECK_SECONDS` | How often rules check SparkyTC results and Jira issues, 120 by default |
 | `ENCRYPTION_KEY` | Encrypts the credentials of integrations. When empty, a key is created in the `app-data` volume; keep a copy of it, or set your own |
 
-Uploaded files are kept in the `app-data` volume and the database in `db-data`; back up both.
+Uploaded files are kept in the `app-data` volume and the database in `db-data`; back up both. Files no board has used for 30 days (`UNUSED_FILES_DAYS`) are deleted by a daily check; until then undo and pasted copies can still bring them back.
 
 ### Connecting to SparkyTC on the same server
 

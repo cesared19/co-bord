@@ -4,6 +4,7 @@ import { type Ctx, requireAdmin, requireUser } from '../context.js'
 import { badRequest, conflict, notFound } from '../errors.js'
 import { asBody, bool, intParam, str } from '../validate.js'
 import { checkUsername } from './auth.js'
+import { unlockUser } from '../loginLimit.js'
 
 export function userRoutes(app: FastifyInstance, ctx: Ctx) {
 	const { db } = ctx
@@ -17,8 +18,12 @@ export function userRoutes(app: FastifyInstance, ctx: Ctx) {
 
 	app.get('/api/users', async (req) => {
 		await requireAdmin(ctx, req)
-		const { rows } = await db.query(`SELECT ${USER_COLUMNS} FROM users u ORDER BY lower(u.username)`)
-		return { users: rows.map(toUser) }
+		const { rows } = await db.query(
+			`SELECT ${USER_COLUMNS}, l.locked_until FROM users u
+			LEFT JOIN login_locks l ON l.key = 'user:' || lower(u.username) AND l.locked_until > now()
+			ORDER BY lower(u.username)`,
+		)
+		return { users: rows.map((r) => ({ ...toUser(r), lockedUntil: r.locked_until ?? null })) }
 	})
 
 	app.post('/api/users', async (req) => {
@@ -51,6 +56,7 @@ export function userRoutes(app: FastifyInstance, ctx: Ctx) {
 			[id, displayName ?? null, isAdmin ?? null],
 		)
 		if (!rows[0]) throw notFound('User not found')
+		if (isAdmin !== undefined) await ctx.onAccessChanged?.(id)
 		return { user: toUser(rows[0]) }
 	})
 
@@ -61,6 +67,19 @@ export function userRoutes(app: FastifyInstance, ctx: Ctx) {
 		const result = await db.query('UPDATE users SET password_hash = $2 WHERE id = $1', [id, await hashPassword(password)])
 		if (!result.rowCount) throw notFound('User not found')
 		await db.query('DELETE FROM sessions WHERE user_id = $1', [id])
+		const { rows: named } = await db.query<{ username: string }>('SELECT username FROM users WHERE id = $1', [id])
+		await unlockUser(db, named[0].username)
+		// signed out everywhere, live boards included
+		await ctx.onAccessChanged?.(id)
+		return { ok: true }
+	})
+
+	/** Lets someone sign in again after too many failed attempts. */
+	app.delete<{ Params: { id: string } }>('/api/users/:id/lock', async (req) => {
+		await requireAdmin(ctx, req)
+		const { rows } = await db.query<{ username: string }>('SELECT username FROM users WHERE id = $1', [intParam(req.params.id)])
+		if (!rows[0]) throw notFound('User not found')
+		await unlockUser(db, rows[0].username)
 		return { ok: true }
 	})
 
@@ -70,6 +89,7 @@ export function userRoutes(app: FastifyInstance, ctx: Ctx) {
 		if (id === admin.id) throw badRequest('You cannot delete your own account')
 		const result = await db.query('DELETE FROM users WHERE id = $1', [id])
 		if (!result.rowCount) throw notFound('User not found')
+		await ctx.onAccessChanged?.(id)
 		return { ok: true }
 	})
 }

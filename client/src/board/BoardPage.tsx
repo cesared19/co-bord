@@ -20,6 +20,16 @@ export default function BoardPage() {
 	const { boardId = '' } = useParams()
 	const [board, setBoard] = useState<BoardInfo | null>(null)
 	const [error, setError] = useState('')
+	/** Bumped to open the board's connection again, after the user's access changed. */
+	const [generation, setGeneration] = useState(0)
+	const accessChanged = useCallback(() => {
+		api<{ board: BoardInfo }>(`/api/boards/${boardId}`)
+			.then((r) => {
+				setBoard(r.board)
+				setGeneration((g) => g + 1)
+			})
+			.catch(() => setError('You no longer have access to this board.'))
+	}, [boardId])
 
 	useEffect(() => {
 		setBoard(null)
@@ -43,10 +53,17 @@ export default function BoardPage() {
 				<Spinner />
 			</div>
 		)
-	return <Board key={board.id} board={board} onRename={(name) => setBoard({ ...board, name })} />
+	return (
+		<Board
+			key={`${board.id}:${generation}`}
+			board={board}
+			onRename={(name) => setBoard({ ...board, name })}
+			onAccessChanged={accessChanged}
+		/>
+	)
 }
 
-function Board({ board, onRename }: { board: BoardInfo; onRename: (name: string) => void }) {
+function Board({ board, onRename, onAccessChanged }: { board: BoardInfo; onRename: (name: string) => void; onAccessChanged: () => void }) {
 	const connection = useBoardConnection(board.id)
 	if (!connection)
 		return (
@@ -54,23 +71,35 @@ function Board({ board, onRename }: { board: BoardInfo; onRename: (name: string)
 				<Spinner />
 			</div>
 		)
-	return <BoardSession key={board.id} board={board} connection={connection} onRename={onRename} />
+	return <BoardSession key={board.id} board={board} connection={connection} onRename={onRename} onAccessChanged={onAccessChanged} />
 }
 
 function BoardSession({
 	board,
 	connection,
 	onRename,
+	onAccessChanged,
 }: {
 	board: BoardInfo
 	connection: BoardConnection
 	onRename: (name: string) => void
+	/** The server closed the board because the user's role changed: read it again. */
+	onAccessChanged: () => void
 }) {
 	const user = useUser()
 	const dark = useIsDark()
 	const readOnly = !canEdit(board.role)
 	const { store, provider } = connection
 	const { elements, peers, status, synced } = useBoardDoc(connection, user, readOnly)
+	useEffect(() => {
+		const onClose = ({ event }: { event: { reason?: string } }) => {
+			if (event.reason === 'Access changed') onAccessChanged()
+		}
+		provider.on('close', onClose)
+		return () => {
+			provider.off('close', onClose)
+		}
+	}, [provider, onAccessChanged])
 	const sparky = useSparkyInfo(board.projectId)
 	const confluence = useConfluenceInfo(board.projectId)
 	const jira = useJiraInfo(board.projectId)

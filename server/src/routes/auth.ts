@@ -12,6 +12,7 @@ import {
 } from '../auth.js'
 import { type Ctx, requireUser, setSessionCookie } from '../context.js'
 import { badRequest, conflict, HttpError } from '../errors.js'
+import { checkLock, clearFailures, ipKey, recordFailure, userKey } from '../loginLimit.js'
 import { asBody, str } from '../validate.js'
 
 export const USERNAME_PATTERN = /^[a-zA-Z0-9._-]{3,40}$/
@@ -64,12 +65,20 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
 		const body = asBody(req.body)
 		const username = str(body, 'username', { min: 1 })
 		const password = str(body, 'password', { min: 1 })
+		const keys = [userKey(username), ipKey(req.ip)]
+		await checkLock(db, keys)
 		const { rows } = await db.query<{ id: number; password_hash: string }>(
 			'SELECT id, password_hash FROM users WHERE lower(username) = lower($1)',
 			[username],
 		)
 		const ok = rows[0] ? await verifyPassword(password, rows[0].password_hash) : false
-		if (!ok) throw new HttpError(401, 'Wrong username or password')
+		if (!ok) {
+			await recordFailure(db, keys, req.ip)
+			// the fifth failure says so right away
+			await checkLock(db, keys)
+			throw new HttpError(401, 'Wrong username or password')
+		}
+		await clearFailures(db, keys)
 		const session = await createSession(db, rows[0].id, ctx.config.sessionDays)
 		setSessionCookie(ctx, reply, session.token, session.expiresAt)
 		return { ok: true }

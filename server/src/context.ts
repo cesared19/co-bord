@@ -16,6 +16,13 @@ export interface Ctx {
 	onBoardDeleted?: (boardId: string) => void
 	/** Set by the collaboration server: stores pending changes of a board now. */
 	flushBoard?: (boardId: string) => Promise<void>
+	/**
+	 * Set by the collaboration server: closes the user's live connections to the boards of a project (or to every
+	 * board), so they reconnect with their new access, or are turned away.
+	 */
+	onAccessChanged?: (userId: number, projectId?: number) => Promise<void>
+	/** Set by the collaboration server: deletes the uploaded files no board has used for a while (see cleanup.ts). */
+	cleanupAssets?: () => Promise<{ deleted: number }>
 	/** Set by the collaboration server: card rules. */
 	rules?: RuleEngine
 }

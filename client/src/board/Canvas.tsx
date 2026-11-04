@@ -1002,16 +1002,40 @@ export function Canvas({
 			}
 			store.checkpoint()
 			if (text.startsWith(CLIPBOARD_PREFIX)) {
+				let items: BoardElement[]
 				try {
-					const items = JSON.parse(text.slice(CLIPBOARD_PREFIX.length)) as BoardElement[]
-					const source = new Map(items.map((el) => [el.id, el]))
-					const bounds = unionBounds(items.map((el) => elementBounds(el, source)))
+					items = JSON.parse(text.slice(CLIPBOARD_PREFIX.length)) as BoardElement[]
+				} catch {
+					return /* not ours after all */
+				}
+				const place = (list: BoardElement[]) => {
+					const source = new Map(list.map((el) => [el.id, el]))
+					const bounds = unionBounds(list.map((el) => elementBounds(el, source)))
 					if (!bounds) return
 					const offset = { x: Math.round(at.x - bounds.x - bounds.w / 2), y: Math.round(at.y - bounds.y - bounds.h / 2) }
-					setSelection(store.clone(items, offset, source))
-				} catch {
-					/* not ours after all */
+					setSelection(store.clone(list, offset, source))
 				}
+				// uploaded files from another project's board are copied into this one, so everyone here can see them
+				const assetIds = items.flatMap((el) => (el.type === 'media' && el.assetId ? [el.assetId] : []))
+				if (!assetIds.length) place(items)
+				else
+					void api<{ assets: Record<string, { id: string; url: string }> }>(`/api/boards/${boardId}/assets/copy`, {
+						method: 'POST',
+						body: { ids: assetIds },
+					})
+						.then((r) => r.assets)
+						.catch(() => ({}) as Record<string, { id: string; url: string }>)
+						.then((assets) => {
+							store.checkpoint()
+							place(
+								items.map((el) => {
+									if (el.type !== 'media' || !el.assetId) return el
+									const copy = assets[el.assetId]
+									if (!copy) return el
+									return { ...el, assetId: copy.id, src: el.src.split(`/api/assets/${el.assetId}`).join(copy.url) }
+								}),
+							)
+						})
 				return
 			}
 			const base = defaultElement('text')
@@ -1031,6 +1055,7 @@ export function Canvas({
 			window.removeEventListener('paste', onPaste)
 		}
 	}, [
+		boardId,
 		store,
 		readOnly,
 		size,

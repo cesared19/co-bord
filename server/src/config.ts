@@ -17,6 +17,10 @@ export interface Config {
 	publicUrl?: string
 	/** How often rules check SparkyTC results and Jira issues (0 turns it off, as in tests). */
 	rulePollMs?: number
+	/** Days an uploaded file no board uses is kept before it's deleted. */
+	assetRetentionDays?: number
+	/** How often unused files are looked for (0 turns it off, as in tests). */
+	cleanupEveryMs?: number
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -34,5 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 		anthropicApiKey: env.ANTHROPIC_API_KEY || undefined,
 		publicUrl: env.PUBLIC_URL ? env.PUBLIC_URL.replace(/\/+$/, '') : undefined,
 		rulePollMs: Number(env.RULE_CHECK_SECONDS ?? 120) * 1000,
+		assetRetentionDays: Number(env.UNUSED_FILES_DAYS ?? 30),
+		cleanupEveryMs: 24 * 60 * 60 * 1000,
 	}
 }

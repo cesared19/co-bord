@@ -195,6 +195,23 @@ const migrations: { version: string; sql: string }[] = [
 			);
 		`,
 	},
+	{
+		version: '0.0.7',
+		sql: `
+			-- failed sign-ins per username and per address; 5 within 15 minutes lock that key for 15 minutes
+			CREATE TABLE login_locks (
+				key TEXT PRIMARY KEY,
+				failures INTEGER NOT NULL DEFAULT 0,
+				first_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+				locked_until TIMESTAMPTZ,
+				-- for a username: the address of its last failure, so unlocking the user unlocks it too
+				last_ip TEXT
+			);
+
+			-- since when no board uses an uploaded file; it's deleted after a while
+			ALTER TABLE assets ADD COLUMN unused_since TIMESTAMPTZ;
+		`,
+	},
 ]
 
 export async function migrate(db: Db): Promise<void> {
