@@ -1,5 +1,6 @@
 import type { Db } from './db.js'
 import { HttpError } from './errors.js'
+import { SPARKY_DOCKER_HINT, unreachable } from './net.js'
 import type { SecretBox } from './crypto.js'
 
 export interface SparkyConfig {
@@ -30,8 +31,8 @@ export async function sparkyRequest<T>(config: Pick<SparkyConfig, 'url' | 'token
 			body: body === undefined ? undefined : JSON.stringify(body),
 			signal: AbortSignal.timeout(10_000),
 		})
-	} catch {
-		throw new HttpError(502, `SparkyTC can't be reached at ${config.url}`)
+	} catch (e) {
+		throw unreachable('SparkyTC', config.url, e, SPARKY_DOCKER_HINT)
 	}
 	const data = (await res.json().catch(() => null)) as { data?: T; message?: string } | null
 	if (res.status === 401) throw new HttpError(502, 'SparkyTC rejected the token. Create a new one in the project settings of SparkyTC.')

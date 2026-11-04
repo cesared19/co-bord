@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.7.0)
+## Features (0.7.1)
 
 ### Boards
 
@@ -162,6 +162,12 @@ SPARKYTC_NETWORK=sparkytc_app-network
    -  **SparkyTC API address**: `http://backend-service:8080`
    -  **Address people open**: SparkyTC's web address, such as `http://192.168.1.20:3000`
    -  **Project API token**: created in SparkyTC's project Settings, under API tokens.
+
+If saving says co-bord's server *doesn't know the name backend-service*, co-bord isn't on SparkyTC's network yet: check that `.env` has both lines, that `SPARKYTC_NETWORK` is the name `docker network ls` shows (it starts with the folder SparkyTC runs from), and recreate the container with `docker compose up -d --force-recreate app`. This should answer `401`:
+
+```bash
+docker compose exec app wget -qSO- http://backend-service:8080/api/integration/v1/project 2>&1 | head -3
+```
 
 To update, pull the new version and run `docker compose up -d --build` again; the database is migrated on start.
 

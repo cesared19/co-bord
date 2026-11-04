@@ -1,6 +1,6 @@
 # co-bord
 
-Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.6.0 está en `main`; 0.7.0 (reglas de tarjetas, Jira y generar pruebas) en desarrollo.
+Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.7.0 está en `main`; 0.7.1 (mensajes claros cuando no se llega a SparkyTC, Confluence o Jira) en desarrollo.
 
 **Repositorio:** https://github.com/cesared19/co-bord.
 
@@ -30,6 +30,7 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
   - Facilitación (`session.ts`, `Facilitation.tsx`): `Y.Map('session')` con `timer` y `voting`, y `Y.Map('votes')` con una clave por ronda y usuario (`${round}:${userId}`), así cada uno escribe solo la suya. Fuera del deshacer. El temporizador usa la hora del servidor (`serverNow`, desfase medido con `/api/health`). Mientras hay votación, el clic en un elemento vota en lugar de seleccionar.
   - `exportPng.ts`: dibuja el tablero en canvas (no usa foreignObject). Imágenes externas solo si permiten CORS; PDF subidos con su primera página; videos como tarjeta.
   - Embeds (`media.ts`, `MediaView.tsx`, `pdf.ts`, `upload.ts`): `media` con `kind` image, video, pdf, youtube, drive, vimeo o link. Las subidas guardan `assetId`; YouTube/Drive/Vimeo guardan solo el id y el iframe se arma con él (nunca un iframe con URL arbitraria); los enlaces pasan por `safeUrl` (solo http(s) o `/api/assets/`). Mientras no está seleccionado, el contenido tiene `pointer-events: none` (el clic selecciona); seleccionado, el contenido lleva `data-interactive` y el lienzo no captura el puntero ahí; se arrastra por la barra de título. pdf.js se carga bajo demanda (chunk aparte, worker con `?url`). Al insertar sin posición exacta se busca espacio libre (`freeSpot`).
+- **Errores de red:** `server/src/net.ts` (`unreachable`) traduce el código del error de `fetch` (ENOTFOUND, ECONNREFUSED, tiempo agotado, certificado) en un mensaje con la causa; para SparkyTC agrega cómo unirse a su red de Docker (`SPARKY_DOCKER_HINT`).
 - **Deploy:** `Dockerfile` (multi-stage, una imagen) + `docker-compose.yml` (Postgres 16 + app en `APP_PORT`, 3200 por defecto; en el servidor ya están SparkyTC en 3000 y 8080 y ProDash en 3100). Sin HTTPS todavía; `COOKIE_SECURE=true` cuando lo haya. `crypto.randomUUID` no existe sin HTTPS: usar `newId()` (`src/lib/id.ts`).
 
 ## Decisiones tomadas
