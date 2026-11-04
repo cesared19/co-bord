@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.10.0)
+## Features (0.11.0)
 
 ### Boards
 
@@ -17,7 +17,9 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Resize several elements at once** with the handles around the selection: everything scales together, text included (Shift keeps the proportions).
 -  **Minimap** (the map button by the zoom): the whole board in small, with the part on screen and teammates' cursors; click or drag on it to move there. It's remembered per person and hidden on phones at first.
 -  **Undo and redo** (Ctrl Z, Ctrl Shift Z) undo your own changes only, never a teammate's.
--  **Download as PNG** of the whole board, with images and the first page of PDFs.
+-  **Download** the whole board as a PNG image or a PDF, or a PDF with a page per frame (in reading order, with its title), with images and the first page of PDFs.
+-  **Find** (Ctrl F) text in notes, shapes and text, frame titles, connector labels, file names and comments; Enter goes to the next match.
+-  **Follow** someone's view by clicking their avatar in the header (Esc or moving the board stops). **Present** (editors) has everyone follow you, with ← → going through the frames like slides, full screen; others can step out and follow again.
 
 ### Images, videos and PDFs
 
@@ -116,6 +118,10 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 | Shift 1, Shift 2 | Fit everything, fit the selection |
 | Alt while dragging | Move or resize without guides or the grid |
 | Shift while rotating | 15° steps |
+| Ctrl F | Find on the board |
+| C | Comment |
+| ← → while presenting | Previous, next frame |
+| Esc while following | Stop following |
 
 ## Roadmap
 
@@ -125,7 +131,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 4. ~~Templates: retrospectives (columns, votes, timer), workflows and design documents; frames~~ (0.3.0)
 5. ~~Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage~~ (0.4.0); ~~Confluence pages embedded as blocks, and boards published to Confluence~~ (0.5.0)
 6. ~~Automations: guided retrospectives and notifications~~ (0.6.0); ~~card rules and generating SparkyTC test cases from a flow~~ (0.7.0)
-7. ~~Alignment guides, grid, rotation, resizing several elements and a minimap~~ (0.9.0); ~~comments, version history and synced videos and PDF pages~~ (0.10.0)
+7. ~~Alignment guides, grid, rotation, resizing several elements and a minimap~~ (0.9.0); ~~comments, version history and synced videos and PDF pages~~ (0.10.0); ~~following and presenting, find and PDF export~~ (0.11.0)
 
 ## Running it
 

@@ -22,6 +22,14 @@ export interface VotingState {
 	by: string
 }
 
+/** Someone presenting: everyone else follows their view (they can step out). */
+export interface Presenting {
+	id: string
+	clientId: number
+	name: string
+	color: string
+}
+
 /** Facilitation state of a board: kept in the board document, outside undo. */
 export class Session {
 	readonly map: Y.Map<unknown>
@@ -43,6 +51,18 @@ export class Session {
 
 	get voting() {
 		return (this.map.get('voting') as VotingState | undefined) ?? null
+	}
+
+	get presenting() {
+		return (this.map.get('presenting') as Presenting | undefined) ?? null
+	}
+
+	startPresenting(clientId: number, name: string, color: string) {
+		this.set('presenting', { id: newId(), clientId, name, color } satisfies Presenting)
+	}
+
+	stopPresenting() {
+		if (!this.store.readOnly) this.store.doc.transact(() => this.map.delete('presenting'))
 	}
 
 	startTimer(ms: number, now: number, by: string) {
@@ -130,6 +150,7 @@ export class Session {
 export interface SessionSnapshot {
 	timer: TimerState | null
 	voting: VotingState | null
+	presenting: Presenting | null
 	myVotes: string[]
 	counts: Map<string, number>
 	voters: number
@@ -141,6 +162,7 @@ export function useSession(store: BoardStore, userId: number) {
 		const read = (): SessionSnapshot => ({
 			timer: session.timer,
 			voting: session.voting,
+			presenting: session.presenting,
 			myVotes: session.myVotes(userId),
 			...session.totals(),
 		})

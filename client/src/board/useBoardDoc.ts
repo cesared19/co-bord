@@ -12,6 +12,8 @@ export interface PresenceState {
 	cursor: Point | null
 	selection: string[]
 	editing: string | null
+	/** The part of the board on their screen, in board units, for following them. */
+	view?: { x: number; y: number; w: number; h: number }
 }
 
 export interface Peer extends PresenceState {
@@ -110,6 +112,7 @@ function usePeers(provider: HocuspocusProvider, userId: number): Peer[] {
 					cursor: presence.cursor ?? null,
 					selection: presence.selection ?? [],
 					editing: presence.editing ?? null,
+					view: presence.view,
 				})
 			})
 			setPeers(list)
