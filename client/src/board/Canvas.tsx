@@ -481,14 +481,6 @@ export function Canvas({
 			})
 	}, [])
 
-	const duplicate = useCallback(() => {
-		if (readOnly) return
-		const items = detachedSelection()
-		if (!items.length) return
-		store.checkpoint()
-		setSelection(store.clone(items, { x: 24, y: 24 }, new Map(items.map((el) => [el.id, el]))))
-	}, [readOnly, store, detachedSelection])
-
 	// ---------- media ----------
 
 	const [uploads, setUploads] = useState<{ id: string; name: string; progress: number; error?: string }[]>([])
@@ -510,6 +502,25 @@ export function Canvas({
 		}
 		return { x: rect.x, y: rect.y }
 	}, [])
+
+	/**
+	 * A copy of the selection: next to it, a little down and right; frames go beside the original, in free space,
+	 * so the copy doesn't sit on top of the original's contents.
+	 */
+	const duplicate = useCallback(() => {
+		if (readOnly) return
+		const items = detachedSelection()
+		if (!items.length) return
+		const source = new Map(items.map((el) => [el.id, el]))
+		let offset = { x: 24, y: 24 }
+		const bounds = unionBounds(items.map((el) => elementBounds(el, source)))
+		if (bounds && items.some(isFrame)) {
+			const spot = freeSpot({ x: bounds.x + bounds.w + 80, y: bounds.y, w: bounds.w, h: bounds.h })
+			offset = { x: Math.round(spot.x - bounds.x), y: Math.round(spot.y - bounds.y) }
+		}
+		store.checkpoint()
+		setSelection(store.clone(items, offset, source))
+	}, [readOnly, store, detachedSelection, freeSpot])
 
 	/**
 	 * Adds media blocks in a row centered on `at`. With `exact` they stay there (a drop);
