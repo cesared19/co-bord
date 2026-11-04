@@ -67,8 +67,42 @@ export function textInsets(el: TextBox): { top: number; right: number; bottom: n
 
 export const center = (r: Rect): Point => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 })
 
+/** A rectangle that may be rotated around its center. */
+export type Rotatable = Rect & { rotation?: number; type?: string }
+
+/** The rotation of an element in degrees; frames and connectors don't rotate. */
+export const rotationOf = (el: BoardElement | Rotatable | undefined): number =>
+	!el || el.type === 'frame' || el.type === 'connector' ? 0 : ((el as Rotatable).rotation ?? 0) % 360 || 0
+
+export function rotatePoint(p: Point, c: Point, degrees: number): Point {
+	if (!degrees) return p
+	const a = (degrees * Math.PI) / 180
+	const cos = Math.cos(a)
+	const sin = Math.sin(a)
+	const dx = p.x - c.x
+	const dy = p.y - c.y
+	return { x: c.x + dx * cos - dy * sin, y: c.y + dx * sin + dy * cos }
+}
+
+/** The four corners of a box, rotated. */
+export function boxCorners(el: Rotatable): Point[] {
+	const c = center(el)
+	const r = rotationOf(el)
+	return [
+		{ x: el.x, y: el.y },
+		{ x: el.x + el.w, y: el.y },
+		{ x: el.x + el.w, y: el.y + el.h },
+		{ x: el.x, y: el.y + el.h },
+	].map((p) => rotatePoint(p, c, r))
+}
+
+/** A point inside a box, rotated or not. */
+export const containsRotated = (el: Rotatable, p: Point, pad = 0) => contains(el, rotatePoint(p, center(el), -rotationOf(el)), pad)
+
 /** Where the line from the element's center toward `target` crosses its outline. */
 export function outlinePoint(el: BoxElement, target: Point): Point {
+	const r = rotationOf(el)
+	if (r) return rotatePoint(outlinePoint({ ...el, rotation: 0 } as BoxElement, rotatePoint(target, center(el), -r)), center(el), r)
 	const c = center(el)
 	const dx = target.x - c.x
 	const dy = target.y - c.y
@@ -84,17 +118,33 @@ export function outlinePoint(el: BoxElement, target: Point): Point {
 
 export type Side = 'top' | 'right' | 'bottom' | 'left'
 
-export function sidePoint(el: Rect, side: Side): Point {
+/** The middle of a side of a box, rotated with it. */
+export function sidePoint(el: Rotatable, side: Side): Point {
+	let p: Point
 	switch (side) {
 		case 'top':
-			return { x: el.x + el.w / 2, y: el.y }
+			p = { x: el.x + el.w / 2, y: el.y }
+			break
 		case 'bottom':
-			return { x: el.x + el.w / 2, y: el.y + el.h }
+			p = { x: el.x + el.w / 2, y: el.y + el.h }
+			break
 		case 'left':
-			return { x: el.x, y: el.y + el.h / 2 }
+			p = { x: el.x, y: el.y + el.h / 2 }
+			break
 		case 'right':
-			return { x: el.x + el.w, y: el.y + el.h / 2 }
+			p = { x: el.x + el.w, y: el.y + el.h / 2 }
 	}
+	return rotatePoint(p, center(el), rotationOf(el))
+}
+
+/** The side of a (rotated) box that faces `toward`, and the axis direction a line leaves it in. */
+function exitSide(el: BoxElement | null, from: Point, toward: Point): { side: Side; vector: Point } {
+	const r = rotationOf(el ?? undefined)
+	const side = facingSide(from, r ? rotatePoint(toward, from, -r) : toward)
+	if (!r) return { side, vector: sideVector[side] }
+	const v = rotatePoint(sideVector[side], { x: 0, y: 0 }, r)
+	// elbows stay horizontal and vertical: the closest axis
+	return { side, vector: Math.abs(v.x) >= Math.abs(v.y) ? { x: Math.sign(v.x), y: 0 } : { x: 0, y: Math.sign(v.y) } }
 }
 
 const sideVector: Record<Side, Point> = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } }
@@ -144,12 +194,12 @@ export function connectorGeometry(c: ConnectorElement, elements: ElementMap): Co
 		return finish([start, end], `M${start.x} ${start.y}L${end.x} ${end.y}`, angle + Math.PI, angle, lerp(start, end, 0.5))
 	}
 
-	const fromSide = facingSide(fromAim, toAim)
-	const toSide = facingSide(toAim, fromAim)
-	const start = fromEl ? sidePoint(fromEl, fromSide) : fromAim
-	const end = toEl ? sidePoint(toEl, toSide) : toAim
-	const ds = sideVector[fromSide]
-	const de = sideVector[toSide]
+	const fromExit = exitSide(fromEl, fromAim, toAim)
+	const toExit = exitSide(toEl, toAim, fromAim)
+	const start = fromEl ? sidePoint(fromEl, fromExit.side) : fromAim
+	const end = toEl ? sidePoint(toEl, toExit.side) : toAim
+	const ds = fromExit.vector
+	const de = toExit.vector
 
 	if (c.route === 'curved') {
 		const k = Math.max(40, Math.hypot(end.x - start.x, end.y - start.y) / 2.5)
@@ -232,7 +282,7 @@ export function boundsOfPoints(points: Point[]): Rect {
 }
 
 export function elementBounds(el: BoardElement, elements: ElementMap): Rect {
-	if (isBox(el)) return { x: el.x, y: el.y, w: el.w, h: el.h }
+	if (isBox(el)) return rotationOf(el) ? boundsOfPoints(boxCorners(el)) : { x: el.x, y: el.y, w: el.w, h: el.h }
 	return connectorGeometry(el, elements).bounds
 }
 

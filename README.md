@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.8.0)
+## Features (0.9.0)
 
 ### Boards
 
@@ -12,6 +12,10 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Sticky notes, text and shapes**: flowchart shapes (process, rounded, ellipse, decision, start / end, input / output, preparation, document, database, triangle). Click to add one at its default size, or drag to draw it. Double-click the board to write text anywhere.
 -  **Connectors**: drag from a shape's **+** handles, or use the Connector tool, from one element to another. They stay attached when elements move, and can be straight, elbow or curved, with arrows, dashes, color, width and a label. Drag a connector's end to attach it somewhere else.
 -  **Editing**: select with a click, Shift + click or a selection box; move, resize (Shift keeps the proportions; sticky notes always do), change colors, text size, bold and alignment from the toolbar above the selection, bring to front or send to back, duplicate (Ctrl D), copy and paste (also between boards), delete, and move with the arrow keys.
+-  **Alignment guides**: while moving or resizing, elements line up with the edges and centers of the ones around them, and space evenly between neighbors, with guides showing how. **Snap to the grid** (the grid button by the zoom) puts them on a 20-pixel grid instead. Hold Alt to move freely.
+-  **Rotate** shapes, sticky notes, text and media with the round handle by the top right corner (Shift for 15° steps; it settles at 0°, 90°, 180° and 270°). Connectors stay attached. **Straighten** in the toolbar sets it back to 0°. Frames don't rotate.
+-  **Resize several elements at once** with the handles around the selection: everything scales together, text included (Shift keeps the proportions).
+-  **Minimap** (the map button by the zoom): the whole board in small, with the part on screen and teammates' cursors; click or drag on it to move there. It's remembered per person and hidden on phones at first.
 -  **Undo and redo** (Ctrl Z, Ctrl Shift Z) undo your own changes only, never a teammate's.
 -  **Download as PNG** of the whole board, with images and the first page of PDFs.
 
@@ -104,6 +108,8 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 | Ctrl Z, Ctrl Shift Z / Ctrl Y | Undo, redo |
 | Ctrl +, Ctrl -, Ctrl 0 | Zoom in, out, 100% |
 | Shift 1, Shift 2 | Fit everything, fit the selection |
+| Alt while dragging | Move or resize without guides or the grid |
+| Shift while rotating | 15° steps |
 
 ## Roadmap
 
@@ -113,6 +119,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 4. ~~Templates: retrospectives (columns, votes, timer), workflows and design documents; frames~~ (0.3.0)
 5. ~~Links to SparkyTC (test cases, suites and plans with their latest results, per-project token) and test coverage~~ (0.4.0); ~~Confluence pages embedded as blocks, and boards published to Confluence~~ (0.5.0)
 6. ~~Automations: guided retrospectives and notifications~~ (0.6.0); ~~card rules and generating SparkyTC test cases from a flow~~ (0.7.0)
+7. ~~Alignment guides, grid, rotation, resizing several elements and a minimap~~ (0.9.0); then comments, version history and synced video and PDF pages
 
 ## Running it
 

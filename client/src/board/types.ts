@@ -30,6 +30,8 @@ interface Box {
 	links?: SparkyLink[]
 	/** Marks elements co-bord adds and may replace, like the headings of grouped retro notes. */
 	tag?: string
+	/** Clockwise, in degrees, around the center (not for frames). */
+	rotation?: number
 	/** Done: shown with a check and struck-through text. Set by people, rules, or when the linked Jira issue closes. */
 	done?: boolean
 	/** The Jira issue created for this card, with its status as last checked. */

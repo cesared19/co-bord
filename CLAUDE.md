@@ -1,6 +1,6 @@
 # co-bord
 
-Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.7.1 está en `main`; 0.8.0 (robustez: acceso en vivo, límite de inicio de sesión, archivos) en desarrollo.
+Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospectivas), producto hermano de SparkyTC. La versión 0.8.0 está en `main`; 0.9.0 (guías, cuadrícula, rotación, redimensionar varios, minimapa) en desarrollo.
 
 **Repositorio:** https://github.com/cesared19/co-bord.
 
@@ -17,6 +17,10 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
   - `BoardStore` (`store.ts`): agregar, actualizar, borrar (los conectores enganchados quedan sueltos donde estaban), z-order, clonar. Transacciones con origen `LOCAL`; `Y.UndoManager` solo deshace lo propio; `checkpoint()` separa pasos de deshacer.
   - `geometry.ts`: caminos SVG de las formas, márgenes del texto, puntos de anclaje, rutas de conectores (recta, codo, curva), cámara (`screen = world * zoom + offset`).
   - `Canvas.tsx`: herramientas, arrastres (pan, mover, redimensionar, selección por recuadro, crear, conectar, extremos, pinch), atajos, portapapeles (eventos `copy`/`paste`, funcionan sin HTTPS), presencia (awareness: `user`, `cursor`, `selection`, `editing`). Elementos en HTML/SVG dentro de un contenedor transformado; selección y manijas en coordenadas de pantalla.
+  - Ajuste (`snap.ts`): al mover, `snapMove` alinea los límites de lo movido con bordes y centros de los elementos cercanos (`snapTargets`, hasta 400 alrededor de la vista) o con espaciado igual entre vecinos de la misma fila/columna; si no hay guía en un eje y la cuadrícula está activa (`GRID` = 20, botón junto al zoom, `localStorage` `co-bord:grid`), a la cuadrícula. Al redimensionar sin rotación, `snapEdges` ajusta los bordes que se mueven. Umbral `SNAP_PX` = 6 px de pantalla; Alt desactiva todo. Guías en `SnapOverlay`.
+  - Rotación: `rotation` en grados en cajas (no marcos). `geometry.ts`: `rotationOf`, `rotatePoint`, `boxCorners`, `containsRotated`; `elementBounds` da el rectángulo que contiene lo rotado; `sidePoint` y `outlinePoint` giran con el elemento y los codos de los conectores salen por el eje más cercano. Se dibuja con `transform: rotate` en `BoxView`/`MediaView` y con `place()` en `exportPng.ts`. El tirador está fuera de la esquina superior derecha (no tapa los + ni la barra); el giro es relativo a donde se tomó, Shift en pasos de 15°, se pega a múltiplos de 90° a menos de 4°. Redimensionar algo rotado se calcula en su marco local.
+  - Varios a la vez: con más de un elemento, tiradores `scale:*` en los límites de la selección; escala posiciones, tamaños y `fontSize` (por el menor factor), los conectores sueltos mueven sus extremos.
+  - Minimapa (`Minimap.tsx`): canvas 200×132 abajo a la derecha, con el botón junto al zoom (`co-bord:minimap`, por defecto visible desde 768 px).
   - `useBoardDoc.ts`: el proveedor se crea en un efecto (`useBoardConnection`), no en render.
   - Marcos (`FrameView`): el área deja pasar los clics al tablero; se eligen y arrastran por el título (tamaño fijo en pantalla hasta 60 % de zoom). Mover, copiar, duplicar y empujar con flechas incluye lo que está completamente dentro (`withFrameContents`). La selección por recuadro solo toma un marco si lo cubre entero. Los conectores no se enganchan a marcos.
   - Plantillas (`templates.ts`): funciones que arman elementos con ids propios; se insertan con `store.clone` en espacio libre y la vista se ajusta a ellas.
@@ -67,9 +71,10 @@ Tableros colaborativos en tiempo real (flujos, documentos de diseño, retrospect
 4. Plantillas: retrospectiva (columnas, votos, temporizador), workflow, documento de diseño; marcos (frames)
 5. ~~SparkyTC (token por proyecto, bloques vinculados a casos/suites/planes con su último resultado, reporte de cobertura)~~ (0.4.0) ~~y Confluence (embeber y publicar)~~ (0.5.0)
 6. ~~Automatizaciones: notificaciones y retro guiada~~ (0.6.0); ~~reglas de tarjetas y generar pruebas~~ (0.7.0, con SparkyTC 2.3.0)
+7. Lienzo: ~~guías, cuadrícula, rotación, redimensionar varios y minimapa~~ (0.9.0); comentarios, historial de versiones y sincronizar videos y PDF (0.10.0)
 
 ## Pendientes conocidos
 
 - Confluence y Jira: no se probaron contra Confluence Cloud ni Jira Cloud reales desde el entorno de desarrollo (sin acceso); verificar al conectarlos por primera vez.
-- Más adelante: HTTPS (sin dominio por ahora), ajuste a la cuadrícula y guías de alineación, minimapa, comentarios en el tablero, historial de versiones del tablero, redimensionar varios elementos a la vez, rotación.
+- Más adelante: HTTPS (sin dominio por ahora), comentarios en el tablero, historial de versiones del tablero.
 - La reproducción de videos y la página de los PDF no se sincronizan entre usuarios.
