@@ -1,4 +1,4 @@
-import { AtSign, Bell, Eye, Zap } from 'lucide-react'
+import { AtSign, Bell, Eye, MessageSquare, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { api } from '../lib/api'
@@ -7,7 +7,7 @@ import { Avatar } from './ui'
 
 export interface AppNotification {
 	id: number
-	kind: 'mention' | 'follow' | 'rule'
+	kind: 'mention' | 'follow' | 'rule' | 'comment'
 	boardId: string | null
 	boardName: string | null
 	projectName: string | null
@@ -25,6 +25,7 @@ function headline(n: AppNotification) {
 	const who = n.actor?.name ?? 'Someone'
 	if (n.kind === 'mention') return `${who} mentioned you`
 	if (n.kind === 'rule') return 'A board rule ran'
+	if (n.kind === 'comment') return `${who} commented`
 	return n.count > 1
 		? `${n.count} changes${n.elementId ? '' : ' on a board you follow'}, last by ${who}`
 		: `${who} changed ${n.elementId ? 'an item you follow' : 'a board you follow'}`
@@ -126,7 +127,7 @@ export function NotificationsBell() {
 					) : (
 						<ul className="relative max-h-96 overflow-auto py-1">
 							{items.map((n) => {
-								const Icon = n.kind === 'mention' ? AtSign : n.kind === 'rule' ? Zap : Eye
+								const Icon = n.kind === 'mention' ? AtSign : n.kind === 'rule' ? Zap : n.kind === 'comment' ? MessageSquare : Eye
 								return (
 									<li key={n.id}>
 										<button

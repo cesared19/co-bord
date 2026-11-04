@@ -1,4 +1,5 @@
 import {
+	MessageSquare,
 	Frame,
 	Hand,
 	ImagePlus,
@@ -156,6 +157,9 @@ export function Toolbar({
 				<MediaMenu onFiles={onFiles} onLink={onLink} confluence={confluence} />
 				<ToolButton label="Frame" shortcut="F" active={tool === 'frame'} onClick={() => onTool('frame')}>
 					<Frame size={19} />
+				</ToolButton>
+				<ToolButton label="Comment" shortcut="C" active={tool === 'comment'} onClick={() => onTool('comment')}>
+					<MessageSquare size={19} />
 				</ToolButton>
 				<ToolButton label="Templates" onClick={onTemplates}>
 					<LayoutTemplate size={19} />

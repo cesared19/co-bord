@@ -21,6 +21,8 @@ export interface Config {
 	assetRetentionDays?: number
 	/** How often unused files are looked for (0 turns it off, as in tests). */
 	cleanupEveryMs?: number
+	/** How often an automatic version of a board being edited is saved (10 minutes; shorter in tests). */
+	versionEveryMs?: number
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {

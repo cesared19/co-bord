@@ -23,6 +23,10 @@ export interface Ctx {
 	onAccessChanged?: (userId: number, projectId?: number) => Promise<void>
 	/** Set by the collaboration server: deletes the uploaded files no board has used for a while (see cleanup.ts). */
 	cleanupAssets?: () => Promise<{ deleted: number }>
+	/** Set by the collaboration server: tells the board's open clients something changed (like 'comments'). */
+	broadcastBoard?: (boardId: string, message: string) => void
+	/** Set by the collaboration server: replaces the board's elements with a version's, for everyone. */
+	restoreBoard?: (boardId: string, version: import('yjs').Doc, userId: number) => Promise<void>
 	/** Set by the collaboration server: card rules. */
 	rules?: RuleEngine
 }

@@ -212,6 +212,49 @@ const migrations: { version: string; sql: string }[] = [
 			ALTER TABLE assets ADD COLUMN unused_since TIMESTAMPTZ;
 		`,
 	},
+	{
+		version: '0.0.8',
+		sql: `
+			-- comment threads: on an element (x, y from its top left corner) or at a point of the board
+			CREATE TABLE comment_threads (
+				id SERIAL PRIMARY KEY,
+				board_id UUID NOT NULL REFERENCES boards (id) ON DELETE CASCADE,
+				element_id TEXT,
+				x DOUBLE PRECISION NOT NULL,
+				y DOUBLE PRECISION NOT NULL,
+				created_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+				resolved_at TIMESTAMPTZ,
+				resolved_by INTEGER REFERENCES users (id) ON DELETE SET NULL
+			);
+			CREATE INDEX comment_threads_board_idx ON comment_threads (board_id);
+
+			CREATE TABLE comments (
+				id SERIAL PRIMARY KEY,
+				thread_id INTEGER NOT NULL REFERENCES comment_threads (id) ON DELETE CASCADE,
+				user_id INTEGER REFERENCES users (id) ON DELETE SET NULL,
+				text TEXT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+				edited_at TIMESTAMPTZ
+			);
+			CREATE INDEX comments_thread_idx ON comments (thread_id, id);
+
+			-- saved states of a board: automatic every 10 minutes of editing, or named by someone
+			CREATE TABLE board_versions (
+				id SERIAL PRIMARY KEY,
+				board_id UUID NOT NULL REFERENCES boards (id) ON DELETE CASCADE,
+				name TEXT,
+				auto BOOLEAN NOT NULL,
+				document BYTEA NOT NULL,
+				created_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+			);
+			CREATE INDEX board_versions_board_idx ON board_versions (board_id, created_at DESC);
+
+			ALTER TABLE notifications DROP CONSTRAINT notifications_kind_check;
+			ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check CHECK (kind IN ('mention', 'follow', 'rule', 'comment'));
+		`,
+	},
 ]
 
 export async function migrate(db: Db): Promise<void> {

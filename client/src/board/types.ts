@@ -156,7 +156,7 @@ export interface Camera {
 	zoom: number
 }
 
-export type Tool = 'select' | 'hand' | 'sticky' | 'text' | 'shape' | 'connector' | 'frame'
+export type Tool = 'select' | 'hand' | 'sticky' | 'text' | 'shape' | 'connector' | 'frame' | 'comment'
 
 export const STICKY_COLORS = ['#fef08a', '#fed7aa', '#fecdd3', '#f5d0fe', '#c7d2fe', '#bae6fd', '#bbf7d0', '#e5e7eb']
 

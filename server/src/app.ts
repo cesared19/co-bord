@@ -24,6 +24,8 @@ import { retroRoutes } from './routes/retro.js'
 import { RetroWriter } from './ai.js'
 import { jiraRoutes } from './routes/jira.js'
 import { ruleRoutes } from './routes/rules.js'
+import { commentRoutes } from './routes/comments.js'
+import { versionRoutes } from './routes/versions.js'
 
 export async function buildApp(config: Config, db: Db, opts: { logger?: boolean; retroWriter?: RetroWriter } = {}) {
 	const app = Fastify({ logger: opts.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024 })
@@ -55,6 +57,8 @@ export async function buildApp(config: Config, db: Db, opts: { logger?: boolean;
 	retroRoutes(app, ctx, opts.retroWriter ?? new RetroWriter(config.anthropicApiKey))
 	jiraRoutes(app, ctx)
 	ruleRoutes(app, ctx)
+	commentRoutes(app, ctx)
+	versionRoutes(app, ctx)
 
 	const collab = createCollab(ctx)
 	app.get('/collab', { websocket: true }, (socket, req) => collab.handle(socket, req.raw))
