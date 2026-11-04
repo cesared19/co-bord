@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.12.0)
+## Features (0.12.1)
 
 ### Boards
 
@@ -15,7 +15,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Alignment guides**: while moving or resizing, elements line up with the edges and centers of the ones around them, and space evenly between neighbors, with guides showing how. **Snap to the grid** (the grid button by the zoom) puts them on a 20-pixel grid instead. Hold Alt to move freely.
 -  **Rotate** shapes, sticky notes, text and media with the round handle by the top right corner (Shift for 15° steps; it settles at 0°, 90°, 180° and 270°). Connectors stay attached. **Straighten** in the toolbar sets it back to 0°. Frames don't rotate.
 -  **Resize several elements at once** with the handles around the selection: everything scales together, text included (Shift keeps the proportions).
--  **Minimap** (the map button by the zoom): the whole board in small, with the part on screen and teammates' cursors; click or drag on it to move there. It's remembered per person and hidden on phones at first.
+-  **Minimap** (the map button by the zoom): the board in small, with the part on screen and teammates' cursors; click or drag on it to move there. It shows the main group of elements; anything far away from it is a dot on the edge that takes you there. It's remembered per person and hidden on phones at first.
 -  **Undo and redo** (Ctrl Z, Ctrl Shift Z) undo your own changes only, never a teammate's.
 -  **Download** the whole board as a PNG image or a PDF, or a PDF with a page per frame (in reading order, with its title), with images and the first page of PDFs.
 -  **Project templates**: save the board (**Templates**, **Project**) or a frame (the template button of a selected frame) as a template of the project, with a picture; everyone in the project adds it from **Templates**. Images, videos and PDFs come along. The person who saved it, or an owner, deletes it.
