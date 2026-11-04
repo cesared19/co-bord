@@ -19,6 +19,7 @@ import {
 	Bold,
 	Copy,
 	PenLine,
+	RotateCcw,
 	SendToBack,
 	Spline,
 	Trash2,
@@ -461,6 +462,22 @@ export function ContextToolbar({
 				>
 					{following ? <BellRing size={16} className="text-brand-600" /> : <Bell size={16} />}
 					<span className="sr-only">{following ? 'Stop following' : 'Follow'}</span>
+				</button>
+			)}
+			{selected.some((el) => el.type !== 'connector' && el.type !== 'frame' && el.rotation) && (
+				<button
+					type="button"
+					title="Straighten (rotation back to 0°)"
+					className={btn}
+					onClick={() =>
+						patch(
+							selected.filter((el) => el.type !== 'connector' && el.rotation),
+							{ rotation: 0 },
+						)
+					}
+				>
+					<RotateCcw size={16} />
+					<span className="sr-only">Straighten</span>
 				</button>
 			)}
 			<button type="button" title="Bring to front" className={btn} onClick={() => (store.checkpoint(), store.bringToFront(ids))}>

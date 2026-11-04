@@ -56,9 +56,18 @@ export async function renderPng(elements: ElementMap, dark: boolean, ids?: strin
 	return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
 }
 
+/** Moves the canvas to an element's top left corner, turned with it. */
+function place(ctx: CanvasRenderingContext2D, el: TextBox | MediaElement) {
+	ctx.translate(el.x, el.y)
+	if (!el.rotation) return
+	ctx.translate(el.w / 2, el.h / 2)
+	ctx.rotate((el.rotation * Math.PI) / 180)
+	ctx.translate(-el.w / 2, -el.h / 2)
+}
+
 function drawBox(ctx: CanvasRenderingContext2D, el: TextBox, dark: boolean) {
 	ctx.save()
-	ctx.translate(el.x, el.y)
+	place(ctx, el)
 	if (el.type === 'shape') {
 		const path = new Path2D(shapePath(el.shape, el.w, el.h))
 		if (el.fill !== 'transparent') {
@@ -196,7 +205,7 @@ async function loadPictures(list: BoardElement[]): Promise<Map<string, Picture>>
 
 function drawMedia(ctx: CanvasRenderingContext2D, el: MediaElement, picture: Picture | null, dark: boolean) {
 	ctx.save()
-	ctx.translate(el.x, el.y)
+	place(ctx, el)
 	if (el.kind === 'image' && picture) {
 		const scale = Math.min(el.w / picture.width, el.h / picture.height)
 		const w = picture.width * scale

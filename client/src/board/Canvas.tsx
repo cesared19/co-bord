@@ -6,7 +6,7 @@ import { useServerClock, useSession } from './session'
 import { TemplatePicker } from './TemplatePicker'
 import { boardLinks, canWriteSparky, type SparkyInfo, useLinkResults } from './sparky'
 import { CoveragePanel, LinkBadges, LinkEditor, LinksPopover } from './SparkyLinks'
-import { BookOpenText, FlaskConical, Zap } from 'lucide-react'
+import { BookOpenText, FlaskConical, Grid3x3, Map as MapIcon, RotateCw, Zap } from 'lucide-react'
 import { GenerateTestsDialog } from './GenerateTestsDialog'
 import { IssueBadges } from './IssueBadges'
 import { RulesPanel } from './RulesPanel'
@@ -25,12 +25,15 @@ import { readMediaSize, uploadAsset } from './upload'
 import {
 	type ConnectorGeometry,
 	connectorGeometry,
-	contains,
+	center,
+	containsRotated,
 	elementBounds,
 	type ElementMap,
 	fitCamera,
 	intersects,
 	rectFromPoints,
+	rotatePoint,
+	rotationOf,
 	type Side,
 	sidePoint,
 	toScreen,
@@ -40,6 +43,8 @@ import {
 	zoomAt,
 } from './geometry'
 import { RemoteCursors, RemoteSelections } from './Presence'
+import { type Gap, GRID, type Guide, snapEdges, snapMove } from './snap'
+import { Minimap } from './Minimap'
 import type { BoardStore } from './store'
 import { FramesMenu, Toolbar, ZoomControls } from './Toolbar'
 import {
@@ -65,12 +70,60 @@ type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 const SIDES: Side[] = ['top', 'right', 'bottom', 'left']
 const MIN_SIZE = 20
+/** How close, in screen pixels, an edge has to come to snap to a guide. */
+const SNAP_PX = 6
+
+function readFlag(key: string, fallback: boolean) {
+	try {
+		const v = localStorage.getItem(key)
+		return v === null ? fallback : v === '1'
+	} catch {
+		return fallback
+	}
+}
+
+function writeFlag(key: string, on: boolean) {
+	try {
+		localStorage.setItem(key, on ? '1' : '0')
+	} catch {
+		/* storage unavailable */
+	}
+}
+
+/** Which edges a resize handle moves. */
+const handleEdges = (h: Handle) => ({
+	x: h.includes('w') ? ('start' as const) : h.includes('e') ? ('end' as const) : undefined,
+	y: h.includes('n') ? ('start' as const) : h.includes('s') ? ('end' as const) : undefined,
+})
+
+const roundRect = (r: Rect): Rect => ({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) })
+
+/** The resize cursor for a handle of a box rotated by `rotation` degrees. */
+function handleCursor(h: Handle, rotation: number) {
+	const angles: Record<Handle, number> = { n: 0, ne: 45, e: 90, se: 135, s: 180, sw: 225, w: 270, nw: 315 }
+	const a = (((angles[h] + rotation) % 180) + 180) % 180
+	return ['ns-resize', 'nesw-resize', 'ew-resize', 'nwse-resize'][Math.round(a / 45) % 4]
+}
 const CLIPBOARD_PREFIX = 'co-bord/elements:'
 
 type Drag =
 	| { kind: 'pan'; startScreen: Point; startCam: Camera }
-	| { kind: 'move'; startWorld: Point; originals: BoardElement[]; moved: boolean; clickedId: string; collapseTo: string | null }
-	| { kind: 'resize'; handle: Handle; original: BoxElement; startWorld: Point; keepRatio: boolean }
+	| {
+			kind: 'move'
+			startWorld: Point
+			originals: BoardElement[]
+			moved: boolean
+			clickedId: string
+			collapseTo: string | null
+			/** Where the moved elements started, and what they can line up with. */
+			bounds: Rect | null
+			others: Rect[]
+	  }
+	| { kind: 'resize'; handle: Handle; original: BoxElement; startWorld: Point; keepRatio: boolean; others: Rect[] }
+	/** Resizing several elements at once: everything scales, text included. */
+	| { kind: 'scale'; handle: Handle; bounds: Rect; originals: BoardElement[]; startWorld: Point; others: Rect[] }
+	/** Rotation follows the pointer around the center, from where the handle was grabbed. */
+	| { kind: 'rotate'; id: string; center: Point; startAngle: number; original: number }
 	| { kind: 'marquee'; startWorld: Point; current: Point; base: string[] }
 	| { kind: 'create'; type: 'shape' | 'sticky' | 'text' | 'frame'; startWorld: Point; current: Point }
 	| { kind: 'connect'; from: Endpoint; startWorld: Point; current: Point; target: string | null }
@@ -142,6 +195,12 @@ export function Canvas({
 	const [editing, setEditing] = useState<string | null>(null)
 	const [, setTick] = useState(0)
 	const drag = useRef<Drag | null>(null)
+	/** Alignment guides and equal gaps shown while dragging. */
+	const [snapShown, setSnapShown] = useState<{ guides: Guide[]; gaps: Gap[] } | null>(null)
+	const [gridOn, setGridOn] = useState(() => readFlag('co-bord:grid', false))
+	const gridRef = useRef(gridOn)
+	gridRef.current = gridOn
+	const [minimapOn, setMinimapOn] = useState(() => readFlag('co-bord:minimap', window.innerWidth >= 768))
 	const pointers = useRef(new Map<number, Point>())
 	const spaceDown = useRef(false)
 	const lastWorld = useRef<Point | null>(null)
@@ -267,8 +326,24 @@ export function Canvas({
 		const list = [...elementsRef.current.values()]
 			.filter((el): el is BoxElement => isBox(el) && el.type !== 'frame')
 			.sort((a, b) => b.z - a.z)
-		return list.find((el) => el.id !== exclude && contains(el, p)) ?? null
+		return list.find((el) => el.id !== exclude && containsRotated(el, p)) ?? null
 	}, [])
+
+	/** What a dragged selection can line up with: the other elements near the view. */
+	const snapTargets = useCallback(
+		(exclude: Set<string>): Rect[] => {
+			const c = cameraRef.current
+			const view = { x: -c.x / c.zoom, y: -c.y / c.zoom, w: size.w / c.zoom, h: size.h / c.zoom }
+			const near = { x: view.x - view.w, y: view.y - view.h, w: view.w * 3, h: view.h * 3 }
+			const all = elementsRef.current
+			return [...all.values()]
+				.filter((el) => isBox(el) && !exclude.has(el.id))
+				.map((el) => elementBounds(el, all))
+				.filter((b) => intersects(near, b))
+				.slice(0, 400)
+		},
+		[size],
+	)
 
 	const select = useCallback((ids: string[]) => {
 		setSelection(ids)
@@ -646,6 +721,31 @@ export function Canvas({
 					original: selected,
 					startWorld: world,
 					keepRatio: keepsRatio(selected),
+					others: snapTargets(new Set([selected.id])),
+				}
+			} else if (type === 'scale') {
+				const all = elementsRef.current
+				const originals = withFrameContents(selectionRef.current, all)
+					.map((x) => all.get(x))
+					.filter((x): x is BoardElement => !!x)
+				const bounds = unionBounds(originals.map((el) => elementBounds(el, all)))
+				if (bounds)
+					drag.current = {
+						kind: 'scale',
+						handle: value as Handle,
+						bounds,
+						originals,
+						startWorld: world,
+						others: snapTargets(new Set(originals.map((el) => el.id))),
+					}
+			} else if (type === 'rotate' && isBox(selected)) {
+				const c = center(selected)
+				drag.current = {
+					kind: 'rotate',
+					id: selected.id,
+					center: c,
+					startAngle: (Math.atan2(world.y - c.y, world.x - c.x) * 180) / Math.PI,
+					original: rotationOf(selected),
 				}
 			} else if (type === 'connect' && isBox(selected)) {
 				drag.current = {
@@ -697,15 +797,18 @@ export function Canvas({
 			if (readOnly || !next.includes(id)) return
 			store.checkpoint()
 			const all = elementsRef.current
+			const originals = withFrameContents(next, all)
+				.map((x) => all.get(x))
+				.filter((x): x is BoardElement => !!x)
 			drag.current = {
 				kind: 'move',
 				startWorld: world,
-				originals: withFrameContents(next, all)
-					.map((x) => all.get(x))
-					.filter((x): x is BoardElement => !!x),
+				originals,
 				moved: false,
 				clickedId: id,
 				collapseTo,
+				bounds: unionBounds(originals.map((el) => elementBounds(el, all))),
+				others: snapTargets(new Set(originals.map((el) => el.id))),
 			}
 		} else {
 			const base = e.shiftKey ? selectionRef.current : []
@@ -738,10 +841,22 @@ export function Canvas({
 				setCamera({ ...d.startCam, x: d.startCam.x + screen.x - d.startScreen.x, y: d.startCam.y + screen.y - d.startScreen.y })
 				return
 			case 'move': {
-				const dx = world.x - d.startWorld.x
-				const dy = world.y - d.startWorld.y
+				let dx = world.x - d.startWorld.x
+				let dy = world.y - d.startWorld.y
 				if (!d.moved && Math.hypot(dx, dy) * cameraRef.current.zoom < 3) return
 				d.moved = true
+				// Alt moves freely; otherwise line up with what's around, or the grid
+				if (d.bounds && !e.altKey) {
+					const snapped = snapMove(
+						{ ...d.bounds, x: d.bounds.x + dx, y: d.bounds.y + dy },
+						d.others,
+						SNAP_PX / cameraRef.current.zoom,
+						gridRef.current,
+					)
+					dx += snapped.dx
+					dy += snapped.dy
+					setSnapShown(snapped.guides.length || snapped.gaps.length ? { guides: snapped.guides, gaps: snapped.gaps } : null)
+				} else setSnapShown(null)
 				store.update(
 					d.originals.map((el): [string, Partial<BoardElement>] => {
 						if (isBox(el)) return [el.id, { x: Math.round(el.x + dx), y: Math.round(el.y + dy) }]
@@ -751,11 +866,70 @@ export function Canvas({
 				)
 				return
 			}
-			case 'resize':
-				store.update([
-					[d.original.id, resize(d.original, d.handle, world.x - d.startWorld.x, world.y - d.startWorld.y, d.keepRatio || e.shiftKey)],
-				])
+			case 'resize': {
+				const o = d.original
+				const keep = d.keepRatio || e.shiftKey
+				const r = rotationOf(o)
+				if (r) {
+					// resize in the element's own frame, keeping the opposite side in place
+					const local = rotatePoint({ x: world.x - d.startWorld.x, y: world.y - d.startWorld.y }, { x: 0, y: 0 }, -r)
+					const next = resize(o, d.handle, local.x, local.y, keep) as Rect
+					const c = rotatePoint(center(next), center(o), r)
+					store.update([[o.id, { w: next.w, h: next.h, x: Math.round(c.x - next.w / 2), y: Math.round(c.y - next.h / 2) }]])
+					return
+				}
+				let next = resize(o, d.handle, world.x - d.startWorld.x, world.y - d.startWorld.y, keep) as Rect
+				if (!keep && !e.altKey) {
+					const snapped = snapEdges(next, handleEdges(d.handle), d.others, SNAP_PX / cameraRef.current.zoom, gridRef.current, MIN_SIZE)
+					next = roundRect(snapped.rect)
+					setSnapShown(snapped.guides.length ? { guides: snapped.guides, gaps: [] } : null)
+				} else setSnapShown(null)
+				store.update([[o.id, { ...next }]])
 				return
+			}
+			case 'scale': {
+				const b = d.bounds
+				let next = resize({ ...b } as BoxElement, d.handle, world.x - d.startWorld.x, world.y - d.startWorld.y, e.shiftKey) as Rect
+				if (!e.shiftKey && !e.altKey) {
+					const snapped = snapEdges(next, handleEdges(d.handle), d.others, SNAP_PX / cameraRef.current.zoom, gridRef.current, MIN_SIZE)
+					next = snapped.rect
+					setSnapShown(snapped.guides.length ? { guides: snapped.guides, gaps: [] } : null)
+				} else setSnapShown(null)
+				const sx = b.w > 1 ? next.w / b.w : 1
+				const sy = b.h > 1 ? next.h / b.h : 1
+				const font = Math.min(sx, sy)
+				const at = (p: Point) => ({ x: next.x + (p.x - b.x) * sx, y: next.y + (p.y - b.y) * sy })
+				store.update(
+					d.originals.map((el): [string, Partial<BoardElement>] => {
+						if (isBox(el)) {
+							// rotated boxes scale around their center
+							const c = at(center(el))
+							const w = Math.max(MIN_SIZE / 2, el.w * sx)
+							const h = Math.max(MIN_SIZE / 2, el.h * sy)
+							const patch: Record<string, number> = {
+								x: Math.round(c.x - w / 2),
+								y: Math.round(c.y - h / 2),
+								w: Math.round(w),
+								h: Math.round(h),
+							}
+							if ('fontSize' in el) patch.fontSize = Math.max(6, Math.round(el.fontSize * font))
+							return [el.id, patch as Partial<BoardElement>]
+						}
+						const end = (p: Endpoint) => (p.id && elementsRef.current.has(p.id) ? p : { ...p, ...at(p) })
+						return [el.id, { from: end(el.from), to: end(el.to) } as Partial<ConnectorElement>]
+					}),
+				)
+				return
+			}
+			case 'rotate': {
+				let deg = d.original + (Math.atan2(world.y - d.center.y, world.x - d.center.x) * 180) / Math.PI - d.startAngle
+				if (e.shiftKey) deg = Math.round(deg / 15) * 15
+				else if (Math.abs(deg - Math.round(deg / 90) * 90) < 4) deg = Math.round(deg / 90) * 90
+				deg = (((Math.round(deg * 10) / 10) % 360) + 360) % 360
+				store.update([[d.id, { rotation: deg } as Partial<BoardElement>]])
+				rerender()
+				return
+			}
 			case 'marquee': {
 				d.current = world
 				const r = rectFromPoints(d.startWorld, world)
@@ -805,6 +979,7 @@ export function Canvas({
 			return
 		}
 		drag.current = null
+		setSnapShown(null)
 		const world = toWorld(cameraRef.current, localPoint(e))
 		const zoom = cameraRef.current.zoom
 
@@ -814,6 +989,8 @@ export function Canvas({
 				store.checkpoint()
 				break
 			case 'resize':
+			case 'scale':
+			case 'rotate':
 			case 'endpoint':
 				store.checkpoint()
 				break
@@ -1115,7 +1292,7 @@ export function Canvas({
 		connectPreview = connectorGeometry(temp, elements)
 	}
 
-	const gridSize = 24 * camera.zoom
+	const gridSize = GRID * camera.zoom
 	const showGrid = gridSize >= 8
 
 	return (
@@ -1210,12 +1387,15 @@ export function Canvas({
 							<div
 								key={el.id}
 								className="absolute border-2 border-brand-500"
-								style={screenRect({
-									x: el.x - 2 / camera.zoom,
-									y: el.y - 2 / camera.zoom,
-									w: el.w + 4 / camera.zoom,
-									h: el.h + 4 / camera.zoom,
-								})}
+								style={{
+									...screenRect({
+										x: el.x - 2 / camera.zoom,
+										y: el.y - 2 / camera.zoom,
+										w: el.w + 4 / camera.zoom,
+										h: el.h + 4 / camera.zoom,
+									}),
+									...(rotationOf(el) ? { transform: `rotate(${rotationOf(el)}deg)` } : {}),
+								}}
 							/>
 						) : null,
 					)}
@@ -1230,32 +1410,78 @@ export function Canvas({
 							})}
 						/>
 					)}
+					{selectedEls.length > 1 &&
+						selectionBounds &&
+						!readOnly &&
+						!d &&
+						HANDLES.map((h) => {
+							const s = toScreen(camera, handlePoint(selectionBounds, h))
+							return (
+								<div
+									key={h}
+									data-handle={`scale:${h}`}
+									title="Drag to resize everything selected"
+									className="pointer-events-auto absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-brand-500 bg-white"
+									style={{ left: s.x, top: s.y, cursor: handleCursor(h, 0) }}
+								/>
+							)
+						})}
 					{single && isBox(single) && !readOnly && editing !== single.id && (
 						<>
 							{HANDLES.map((h) => {
-								const p = handlePoint(single, h)
+								const p = rotatePoint(handlePoint(single, h), center(single), rotationOf(single))
 								const s = toScreen(camera, p)
 								return (
 									<div
 										key={h}
 										data-handle={`resize:${h}`}
 										className="pointer-events-auto absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-brand-500 bg-white"
-										style={{ left: s.x, top: s.y, cursor: `${h}-resize` }}
+										style={{ left: s.x, top: s.y, cursor: handleCursor(h, rotationOf(single)) }}
 									/>
 								)
 							})}
 							{single.type !== 'frame' &&
+								(() => {
+									const c = center(single)
+									const r = rotationOf(single)
+									// beyond the top right corner: clear of the connect handles and the toolbar
+									const top = rotatePoint({ x: single.x + single.w + 18 / camera.zoom, y: single.y - 18 / camera.zoom }, c, r)
+									const s = toScreen(camera, top)
+									return (
+										<div
+											data-handle="rotate:0"
+											title={`Rotate (Shift: 15° steps)${r ? ` · ${Math.round(r)}°` : ''}`}
+											className="pointer-events-auto absolute flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-brand-500 bg-white text-brand-600"
+											style={{ left: s.x, top: s.y }}
+										>
+											<RotateCw size={11} strokeWidth={3} />
+										</div>
+									)
+								})()}
+							{d?.kind === 'rotate' && (
+								<div
+									className="absolute -translate-x-1/2 rounded bg-gray-900 px-1.5 py-0.5 text-xs text-white tabular-nums"
+									style={{ left: toScreen(camera, center(single)).x, top: toScreen(camera, center(single)).y }}
+								>
+									{Math.round(rotationOf(single))}°
+								</div>
+							)}
+							{single.type !== 'frame' &&
 								SIDES.map((side) => {
 									const p = toScreen(camera, sidePoint(single, side))
 									const off = 22
-									const pos =
+									const normal = rotatePoint(
 										side === 'top'
-											? { x: p.x, y: p.y - off }
+											? { x: 0, y: -1 }
 											: side === 'bottom'
-												? { x: p.x, y: p.y + off }
+												? { x: 0, y: 1 }
 												: side === 'left'
-													? { x: p.x - off, y: p.y }
-													: { x: p.x + off, y: p.y }
+													? { x: -1, y: 0 }
+													: { x: 1, y: 0 },
+										{ x: 0, y: 0 },
+										rotationOf(single),
+									)
+									const pos = { x: p.x + normal.x * off, y: p.y + normal.y * off }
 									return (
 										<div
 											key={side}
@@ -1310,6 +1536,7 @@ export function Canvas({
 						/>
 					)}
 					<IssueBadges elements={elements} camera={camera} />
+					{snapShown && <SnapOverlay shown={snapShown} camera={camera} />}
 					<RemoteCursors peers={peers} camera={camera} />
 				</div>
 			</div>
@@ -1540,6 +1767,32 @@ export function Canvas({
 				onReset={() => setCamera((c) => zoomAt(c, { x: size.w / 2, y: size.h / 2 }, 1))}
 				onFit={() => fit()}
 			>
+				<button
+					type="button"
+					aria-pressed={gridOn}
+					title={gridOn ? 'Snapping to the grid (Alt while dragging moves freely)' : 'Snap to the grid'}
+					onClick={() => {
+						writeFlag('co-bord:grid', !gridOn)
+						setGridOn(!gridOn)
+					}}
+					className={`flex size-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 ${gridOn ? 'bg-gray-100 text-brand-600 dark:bg-gray-800 dark:text-brand-300' : 'text-gray-700 dark:text-gray-200'}`}
+				>
+					<Grid3x3 size={16} />
+					<span className="sr-only">Snap to the grid</span>
+				</button>
+				<button
+					type="button"
+					aria-pressed={minimapOn}
+					title={minimapOn ? 'Hide the minimap' : 'Show the minimap'}
+					onClick={() => {
+						writeFlag('co-bord:minimap', !minimapOn)
+						setMinimapOn(!minimapOn)
+					}}
+					className={`flex size-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 ${minimapOn ? 'bg-gray-100 text-brand-600 dark:bg-gray-800 dark:text-brand-300' : 'text-gray-700 dark:text-gray-200'}`}
+				>
+					<MapIcon size={16} />
+					<span className="sr-only">Minimap</span>
+				</button>
 				<FramesMenu
 					frames={frames}
 					onPick={(id) => {
@@ -1548,6 +1801,16 @@ export function Canvas({
 					}}
 				/>
 			</ZoomControls>
+			{minimapOn && elements.size > 0 && (
+				<Minimap
+					elements={elements}
+					camera={camera}
+					viewport={size}
+					peers={peers}
+					dark={dark}
+					onMove={(p) => setCamera((c) => ({ ...c, x: size.w / 2 - p.x * c.zoom, y: size.h / 2 - p.y * c.zoom }))}
+				/>
+			)}
 			{!readOnly && selectedEls.length > 0 && selectionBounds && !d && editing === null && (
 				<ContextToolbar
 					store={store}
@@ -1614,4 +1877,32 @@ function resize(o: BoxElement, h: Handle, dx: number, dy: number, keepRatio: boo
 		else bottom = top + hh
 	}
 	return { x: Math.round(left), y: Math.round(top), w: Math.round(right - left), h: Math.round(bottom - top) }
+}
+
+/** Alignment guides and equal-gap markers, in screen space. */
+function SnapOverlay({ shown, camera }: { shown: { guides: Guide[]; gaps: Gap[] }; camera: Camera }) {
+	const color = '#e11d48'
+	return (
+		<svg className="absolute inset-0 h-full w-full overflow-visible" aria-hidden>
+			{shown.guides.map((g, i) => {
+				const a = toScreen(camera, g.axis === 'x' ? { x: g.at, y: g.from } : { x: g.from, y: g.at })
+				const b = toScreen(camera, g.axis === 'x' ? { x: g.at, y: g.to } : { x: g.to, y: g.at })
+				return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={1} strokeDasharray="4 3" />
+			})}
+			{shown.gaps.flatMap((gap, i) =>
+				gap.spans.map((span, j) => {
+					const a = toScreen(camera, gap.axis === 'x' ? { x: span.from, y: span.at } : { x: span.at, y: span.from })
+					const b = toScreen(camera, gap.axis === 'x' ? { x: span.to, y: span.at } : { x: span.at, y: span.to })
+					const tick = gap.axis === 'x' ? { x: 0, y: 5 } : { x: 5, y: 0 }
+					return (
+						<g key={`${i}-${j}`} stroke={color} strokeWidth={1.5}>
+							<line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+							<line x1={a.x - tick.x} y1={a.y - tick.y} x2={a.x + tick.x} y2={a.y + tick.y} />
+							<line x1={b.x - tick.x} y1={b.y - tick.y} x2={b.x + tick.x} y2={b.y + tick.y} />
+						</g>
+					)
+				}),
+			)}
+		</svg>
+	)
 }

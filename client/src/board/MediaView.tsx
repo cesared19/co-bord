@@ -36,6 +36,7 @@ export const MediaView = memo(function MediaView({ el, active, dark }: Props) {
 		overflow: 'hidden',
 		background: dark ? '#1f2937' : '#ffffff',
 		boxShadow: '0 1px 2px rgb(0 0 0 / .12), 0 4px 12px -4px rgb(0 0 0 / .2)',
+		...(el.rotation ? { transform: `rotate(${el.rotation}deg)` } : {}),
 	}
 
 	if (el.kind === 'image') {

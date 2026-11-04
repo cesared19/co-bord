@@ -52,7 +52,17 @@ export const BoxView = memo(function BoxView({ el, dark, editing, onText, onEdit
 	}
 
 	return (
-		<div data-el={el.id} style={{ position: 'absolute', left: el.x, top: el.y, width: el.w, height: el.h }}>
+		<div
+			data-el={el.id}
+			style={{
+				position: 'absolute',
+				left: el.x,
+				top: el.y,
+				width: el.w,
+				height: el.h,
+				...(el.rotation ? { transform: `rotate(${el.rotation}deg)` } : {}),
+			}}
+		>
 			{el.type === 'shape' && (
 				<svg width={el.w} height={el.h} style={{ position: 'absolute', inset: 0, overflow: 'visible' }} aria-hidden>
 					<path
