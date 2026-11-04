@@ -75,8 +75,15 @@ export function parseMediaUrl(raw: string): NewMedia | null {
 }
 
 /** The address of the content itself: the uploaded file or the external URL. */
+/** On a board opened with a share link, files are read with the link. */
+let guestToken: string | null = null
+export const setGuestToken = (token: string | null) => {
+	guestToken = token
+}
+
 export function mediaUrl(el: MediaElement): string {
-	return el.assetId ? `/api/assets/${el.assetId}` : el.src
+	if (!el.assetId) return el.src
+	return `/api/assets/${el.assetId}${guestToken ? `?guest=${encodeURIComponent(guestToken)}` : ''}`
 }
 
 /** Player address for YouTube, Drive and Vimeo, built from the id only. */

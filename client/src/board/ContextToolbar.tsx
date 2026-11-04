@@ -4,6 +4,7 @@ import {
 	BookOpenText,
 	CircleCheck,
 	FlaskConical,
+	LayoutTemplate,
 	ListChecks,
 	LoaderCircle,
 	Ticket,
@@ -62,6 +63,8 @@ interface Props {
 	linkEditor?: (el: BoardElement) => ReactNode
 	/** Opens the generate tests dialog for a frame, when the project is connected to SparkyTC. */
 	onGenerateTests?: (frameId: string) => void
+	/** Saves a frame, with what's inside, as a project template. */
+	onSaveTemplate?: (frameId: string) => void
 	/** Creates a Jira issue for a card, when the project is connected to Jira. */
 	onCreateIssue?: (elementId: string) => Promise<void>
 }
@@ -86,6 +89,7 @@ export function ContextToolbar({
 	onToggleFollow,
 	onGenerateTests,
 	onCreateIssue,
+	onSaveTemplate,
 }: Props) {
 	const ref = useRef<HTMLDivElement>(null)
 	const [pos, setPos] = useState({ left: 0, top: 0 })
@@ -358,6 +362,12 @@ export function ContextToolbar({
 							<button type="button" title="Download the frame as PNG" className={btn} onClick={() => onExportFrame(frames[0].id)}>
 								<Download size={16} />
 							</button>
+							{onSaveTemplate && (
+								<button type="button" title="Save as a template" className={btn} onClick={() => onSaveTemplate(frames[0].id)}>
+									<LayoutTemplate size={16} />
+									<span className="sr-only">Save as a template</span>
+								</button>
+							)}
 							{onGenerateTests && (
 								<button type="button" title="Generate tests from the flow" className={btn} onClick={() => onGenerateTests(frames[0].id)}>
 									<ListChecks size={16} />

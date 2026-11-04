@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.11.0)
+## Features (0.12.0)
 
 ### Boards
 
@@ -18,6 +18,11 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Minimap** (the map button by the zoom): the whole board in small, with the part on screen and teammates' cursors; click or drag on it to move there. It's remembered per person and hidden on phones at first.
 -  **Undo and redo** (Ctrl Z, Ctrl Shift Z) undo your own changes only, never a teammate's.
 -  **Download** the whole board as a PNG image or a PDF, or a PDF with a page per frame (in reading order, with its title), with images and the first page of PDFs.
+-  **Project templates**: save the board (**Templates**, **Project**) or a frame (the template button of a selected frame) as a template of the project, with a picture; everyone in the project adds it from **Templates**. Images, videos and PDFs come along. The person who saved it, or an owner, deletes it.
+-  **Import** (**Templates**, **Import**): a CSV becomes sticky notes, one per row (a `text` column, and optional `color`, `frame` or `column`, and `tags`; rows with a frame are grouped in frames), including Miro's CSV export of sticky notes. A **co-bord file** (.zip, from **Download**) brings a board, with its files, to another board or co-bord.
+-  **Share with guests** (owners, the share button in the header): read-only links for people without an account, which can expire. Guests see the board live, without comments or the project's integrations; revoking a link closes the boards opened with it. Without HTTPS links travel unencrypted, so share them inside your network.
+-  Big boards stay smooth: only what's on screen is drawn.
+-  Hovering a tool in the side toolbar (or reaching it with Tab) shows its name and shortcut.
 -  **Find** (Ctrl F) text in notes, shapes and text, frame titles, connector labels, file names and comments; Enter goes to the next match.
 -  **Follow** someone's view by clicking their avatar in the header (Esc or moving the board stops). **Present** (editors) has everyone follow you, with ← → going through the frames like slides, full screen; others can step out and follow again.
 

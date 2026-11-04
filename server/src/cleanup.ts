@@ -40,6 +40,15 @@ export async function cleanupAssets(ctx: Ctx, live: (boardId: string) => Y.Doc |
 		}
 		last = rows[rows.length - 1].id
 	}
+	// templates keep their files too
+	const { rows: templates } = await db.query<{ elements: unknown[] }>('SELECT elements FROM project_templates')
+	for (const t of templates) {
+		const doc = new Y.Doc()
+		const map = doc.getMap('elements')
+		for (const el of t.elements) if (el && typeof el === 'object') map.set(String((el as { id?: unknown }).id), el)
+		assetsIn(doc, used)
+		doc.destroy()
+	}
 	const ids = [...used]
 	await db.query('UPDATE assets SET unused_since = NULL WHERE unused_since IS NOT NULL AND id::text = ANY($1)', [ids])
 	await db.query('UPDATE assets SET unused_since = now() WHERE unused_since IS NULL AND NOT (id::text = ANY($1))', [ids])

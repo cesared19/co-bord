@@ -35,21 +35,51 @@ function ToolButton({
 	onClick: () => void
 	children: React.ReactNode
 }) {
+	// a small label beside the button: on mouse hover (after a moment) and keyboard focus, gone on click
+	const [tip, setTip] = useState(false)
+	const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const hide = () => {
+		if (timer.current) clearTimeout(timer.current)
+		timer.current = null
+		setTip(false)
+	}
+	useEffect(() => hide, [])
 	return (
-		<button
-			type="button"
-			title={shortcut ? `${label} (${shortcut})` : label}
-			aria-pressed={active}
-			onClick={onClick}
-			className={`flex size-10 items-center justify-center rounded-lg ${
-				active
-					? 'bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-200'
-					: 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
-			}`}
-		>
-			{children}
-			<span className="sr-only">{label}</span>
-		</button>
+		<span className="relative flex">
+			<button
+				type="button"
+				aria-label={label}
+				aria-keyshortcuts={shortcut}
+				aria-pressed={active}
+				onClick={() => {
+					hide()
+					onClick()
+				}}
+				onPointerEnter={(e) => {
+					if (e.pointerType !== 'mouse') return
+					timer.current = setTimeout(() => setTip(true), 250)
+				}}
+				onPointerLeave={hide}
+				onFocus={(e) => e.currentTarget.matches(':focus-visible') && setTip(true)}
+				onBlur={hide}
+				className={`flex size-10 items-center justify-center rounded-lg ${
+					active
+						? 'bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-200'
+						: 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+				}`}
+			>
+				{children}
+			</button>
+			{tip && (
+				<span
+					role="tooltip"
+					className="pointer-events-none absolute top-1/2 left-full z-30 ml-2.5 -translate-y-1/2 rounded-md bg-gray-900 px-2 py-1 text-xs font-medium whitespace-nowrap text-white shadow-lg dark:bg-gray-100 dark:text-gray-900"
+				>
+					{label}
+					{shortcut && <span className="ml-1.5 font-normal text-gray-400 dark:text-gray-500">{shortcut}</span>}
+				</span>
+			)}
+		</span>
 	)
 }
 

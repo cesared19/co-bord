@@ -26,20 +26,25 @@ export interface BoardConnection {
 }
 
 /** Opens the board's shared document; null until it is created. */
-export function useBoardConnection(boardId: string): BoardConnection | null {
+export function useBoardConnection(boardId: string, guestToken?: string): BoardConnection | null {
 	const [connection, setConnection] = useState<BoardConnection | null>(null)
 	useEffect(() => {
 		const doc = new Y.Doc()
 		const store = new BoardStore(doc)
 		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-		const provider = new HocuspocusProvider({ url: `${protocol}://${window.location.host}/collab`, name: boardId, document: doc })
+		const provider = new HocuspocusProvider({
+			url: `${protocol}://${window.location.host}/collab`,
+			name: boardId,
+			document: doc,
+			...(guestToken ? { token: guestToken } : {}),
+		})
 		setConnection({ store, provider })
 		return () => {
 			setConnection(null)
 			provider.destroy()
 			doc.destroy()
 		}
-	}, [boardId])
+	}, [boardId, guestToken])
 	return connection
 }
 

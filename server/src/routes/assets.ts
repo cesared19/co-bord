@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { atLeast, boardAccess, projectRole } from '../access.js'
-import { type Ctx, requireUser } from '../context.js'
-import { badRequest, forbidden, HttpError, notFound } from '../errors.js'
+import { type Ctx, currentUser, requireUser } from '../context.js'
+import { shareLink } from '../shares.js'
+import { badRequest, forbidden, HttpError, notFound, unauthorized } from '../errors.js'
 import { isUuid } from '../validate.js'
 
 /** Accepted uploads. The type is always served from this list, never from the upload. */
@@ -101,19 +102,25 @@ export function assetRoutes(app: FastifyInstance, ctx: Ctx) {
 		return { assets: result }
 	})
 
-	app.get<{ Params: { id: string } }>('/api/assets/:id', async (req, reply) => {
-		const user = await requireUser(ctx, req)
+	app.get<{ Params: { id: string }; Querystring: { guest?: string } }>('/api/assets/:id', async (req, reply) => {
+		// guests read the files of the shared board's project with their link
+		const link = req.query.guest ? await shareLink(db, req.query.guest) : null
+		const user = link ? null : await currentUser(ctx, req)
+		if (!user && !link) throw unauthorized()
 		if (!isUuid(req.params.id)) throw notFound('File not found')
 		const { rows } = await db.query<{ project_id: number; name: string; content_type: string }>(
 			'SELECT project_id, name, content_type FROM assets WHERE id = $1',
 			[req.params.id],
 		)
 		if (!rows[0]) throw notFound('File not found')
-		try {
-			await projectRole(db, user, rows[0].project_id)
-		} catch {
-			throw notFound('File not found')
-		}
+		if (link) {
+			if (link.projectId !== rows[0].project_id) throw notFound('File not found')
+		} else
+			try {
+				await projectRole(db, user!, rows[0].project_id)
+			} catch {
+				throw notFound('File not found')
+			}
 		const size = await storage.size(req.params.id)
 		if (size === null) throw notFound('File not found')
 

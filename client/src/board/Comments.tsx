@@ -33,15 +33,16 @@ export interface Thread {
 }
 
 /** The board's comment threads, reloaded when someone changes them (the server tells the open boards). */
-export function useComments(boardId: string, provider: HocuspocusProvider) {
+export function useComments(boardId: string, provider: HocuspocusProvider, enabled = true) {
 	const [threads, setThreads] = useState<Thread[] | null>(null)
 	const reload = useCallback(async () => {
+		if (!enabled) return setThreads([])
 		try {
 			setThreads((await api<{ threads: Thread[] }>(`/api/boards/${boardId}/comments`)).threads)
 		} catch {
 			/* keep what we have */
 		}
-	}, [boardId])
+	}, [boardId, enabled])
 	useEffect(() => {
 		void reload()
 		const onStateless = ({ payload }: { payload: string }) => payload === 'comments' && void reload()

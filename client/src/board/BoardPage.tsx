@@ -1,4 +1,5 @@
-import { ArrowLeft, Check, Download, Eye, Link2, WifiOff } from 'lucide-react'
+import { ArrowLeft, Check, Eye, Link2, Share2, WifiOff } from 'lucide-react'
+import { ShareDialog } from './ShareDialog'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { Logo } from '../components/Logo'
@@ -8,8 +9,9 @@ import { api, type BoardInfo, canEdit } from '../lib/api'
 import { useUser } from '../lib/auth'
 import { useIsDark } from '../lib/theme'
 import { Canvas } from './Canvas'
-import { download, renderPng } from './exportPng'
-import { exportPdf, framesInOrder } from './pdfExport'
+import { ExportMenu } from './ExportMenu'
+import { download } from './exportPng'
+import { exportCoBordFile } from './importExport'
 import { PresenceAvatars } from './Presence'
 import { BoardEnvContext, useConfluenceInfo, useJiraInfo } from './confluence'
 import { FollowBoardButton, useFollows } from './follows'
@@ -118,8 +120,7 @@ function BoardSession({
 	const [copied, setCopied] = useState(false)
 	/** The teammate whose view this person follows. */
 	const [following, setFollowing] = useState<number | null>(null)
-	const [exportOpen, setExportOpen] = useState(false)
-	const [exporting, setExporting] = useState(false)
+	const [sharing, setSharing] = useState(false)
 
 	useEffect(() => {
 		document.title = `${board.name} · co-bord`
@@ -127,23 +128,6 @@ function BoardSession({
 			document.title = 'co-bord'
 		}
 	}, [board.name])
-
-	const fileName = board.name.replace(/[\\/:*?"<>|]+/g, '_')
-	const exportPng = useCallback(async () => {
-		const blob = await renderPng(elements, dark)
-		if (blob) download(blob, `${fileName}.png`)
-	}, [elements, dark, fileName])
-	const downloadPdf = async (perFrame: boolean) => {
-		setExportOpen(false)
-		setExporting(true)
-		try {
-			const blob = await exportPdf(elements, board.name, perFrame)
-			if (blob) download(blob, `${fileName}.pdf`)
-		} finally {
-			setExporting(false)
-		}
-	}
-	const frameCount = useMemo(() => framesInOrder(elements).length, [elements])
 
 	async function copyLink() {
 		const url = window.location.href
@@ -211,48 +195,26 @@ function BoardSession({
 						{copied ? <Check size={18} /> : <Link2 size={18} />}
 						<span className="sr-only">Copy link</span>
 					</button>
-					<div className="relative">
+					{board.role === 'owner' && (
 						<button
 							type="button"
-							onClick={() => setExportOpen(!exportOpen)}
-							disabled={!elements.size || exporting}
-							aria-expanded={exportOpen}
-							title="Download"
-							className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
+							onClick={() => setSharing(true)}
+							title="Share, also with guests"
+							className="rounded p-1.5 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
 						>
-							<Download size={18} className={exporting ? 'animate-pulse' : ''} />
-							<span className="sr-only">Download</span>
+							<Share2 size={18} />
+							<span className="sr-only">Share</span>
 						</button>
-						{exportOpen && (
-							<div
-								role="menu"
-								className="absolute top-9 right-0 z-40 w-60 rounded-xl border border-gray-200 bg-white p-1 text-sm shadow-lg dark:border-gray-700 dark:bg-gray-900"
-							>
-								{[
-									{ label: 'PNG image', hint: 'The whole board', run: () => (setExportOpen(false), void exportPng()) },
-									{ label: 'PDF', hint: 'The whole board on one page', run: () => void downloadPdf(false) },
-									{
-										label: 'PDF, a page per frame',
-										hint: frameCount ? `${frameCount} ${frameCount === 1 ? 'page' : 'pages'}, in reading order` : 'The board has no frames',
-										run: () => void downloadPdf(true),
-										disabled: !frameCount,
-									},
-								].map((item) => (
-									<button
-										key={item.label}
-										type="button"
-										role="menuitem"
-										disabled={item.disabled}
-										onClick={item.run}
-										className="block w-full rounded-lg px-3 py-2 text-left hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"
-									>
-										<span className="block font-medium">{item.label}</span>
-										<span className="block text-xs text-gray-500">{item.hint}</span>
-									</button>
-								))}
-							</div>
-						)}
-					</div>
+					)}
+					<ExportMenu
+						elements={elements}
+						name={board.name}
+						dark={dark}
+						onCoBordFile={async () =>
+							download(await exportCoBordFile(elements, board.name), `${board.name.replace(/[\\/:*?"<>|]+/g, '_')}.co-bord.zip`)
+						}
+					/>
+					{sharing && <ShareDialog boardId={board.id} onClose={() => setSharing(false)} />}
 				</div>
 			</header>
 			<div className="relative min-h-0 flex-1">
@@ -283,6 +245,7 @@ function BoardSession({
 							confluence={confluence}
 							follows={follows}
 							focusId={focusId}
+							owner={board.role === 'owner'}
 						/>
 					</BoardEnvContext.Provider>
 				)}
