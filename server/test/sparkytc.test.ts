@@ -35,6 +35,22 @@ async function startFakeSparky() {
 	}))
 	app.get('/api/integration/v1/test-plans', async () => ({ data: [] }))
 	app.post('/api/integration/v1/results', async (req) => ({ data: { echo: req.body } }))
+	app.get<{ Params: { number: string } }>('/api/integration/v1/test-cases/:number/history', async (req, reply) => {
+		// 7 is the test case of an older SparkyTC, without this endpoint: a plain 404
+		if (req.params.number === '7') return reply.status(404).send({ timestamp: 'now', status: 404, error: 'Not Found', path: req.url })
+		if (req.params.number !== '1')
+			return reply.status(404).send({ status: 'ERROR', error: 'Not Found', message: `No test case ${req.params.number} in this project` })
+		return {
+			data: {
+				testCase: { testCaseNumber: 1, title: 'Sign in', webPath: '/test-cases/PRJ/1' },
+				format: 'TEXT',
+				steps: [],
+				archived: false,
+				total: 1,
+				results: [{ status: 'PASS', testRunNumber: 2, webPath: '/test-runs/PRJ/2/1' }],
+			},
+		}
+	})
 	const url = await app.listen({ port: 0, host: '127.0.0.1' })
 	return { app, url }
 }
@@ -114,6 +130,18 @@ describe('SparkyTC connection', () => {
 		const before = calls.filter((c) => c.includes('/results')).length
 		await viewer.post(`${base}/results`, { testCaseNumbers: [1, 3], sectionIDs: ['11111111-1111-1111-1111-111111111111'], build: '1.0' })
 		expect(calls.filter((c) => c.includes('/results')).length).toBe(before)
+
+		// the history of a test case, for members
+		const history = (await viewer.get(`${base}/test-cases/1/history`)).body
+		expect(history).toMatchObject({ testCase: { title: 'Sign in' }, total: 1, results: [{ status: 'PASS', testRunNumber: 2 }] })
+		expect(calls).toContain('GET /api/integration/v1/test-cases/1/history?limit=50')
+		const missing = await viewer.get(`${base}/test-cases/5/history`)
+		expect(missing.status).toBe(404)
+		expect(missing.body.error).toBe('SparkyTC: No test case 5 in this project')
+		const old = await viewer.get(`${base}/test-cases/7/history`)
+		expect(old.status).toBe(502)
+		expect(old.body.error).toContain('SparkyTC 2.4.0')
+		expect((await outsider.get(`${base}/test-cases/1/history`)).status).toBe(404)
 
 		expect((await owner.delete(base)).status).toBe(403)
 		expect((await admin.delete(base)).status).toBe(200)
