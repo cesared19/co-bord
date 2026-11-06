@@ -113,6 +113,16 @@ export function sparkyRoutes(app: FastifyInstance, ctx: Ctx) {
 		throw badRequest('kind must be case, section or plan')
 	})
 
+	/** A test case with its steps and its results, newest first (SparkyTC 2.4.0 or later). */
+	app.get<{ Params: { id: string; number: string } }>('/api/projects/:id/sparkytc/test-cases/:number/history', async (req) => {
+		const user = await requireUser(ctx, req)
+		const projectId = intParam(req.params.id)
+		await requireProjectRole(db, user, projectId, 'viewer')
+		const config = await connection(projectId)
+		const number = intParam(req.params.number)
+		return cached(`${projectId}:history:${number}`, () => sparkyRequest(config, `/test-cases/${number}/history?limit=50`))
+	})
+
 	/** Latest results of linked items, in the current build or the given one. */
 	app.post<{ Params: { id: string } }>('/api/projects/:id/sparkytc/results', async (req) => {
 		const user = await requireUser(ctx, req)

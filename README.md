@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.13.0)
+## Features (0.14.0)
 
 ### Boards
 
@@ -58,10 +58,11 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ### Test coverage with SparkyTC
 
--  An admin connects a project to a SparkyTC project (2.2.0 or later) in the project's **Settings**, with a project API token created in SparkyTC (its **Settings**, **API tokens**). The token is stored encrypted. A **Read** token shows results; a **Read and write** token (SparkyTC 2.3.0 or later) also lets co-bord create test cases.
+-  An admin connects each co-bord project to a SparkyTC project of its own (2.2.0 or later; two co-bord projects can use the same one or different ones) in the project's **Settings**, with a project API token created in SparkyTC (its **Settings**, **API tokens**). The token is stored encrypted. A **Read** token shows results; a **Read and write** token (SparkyTC 2.3.0 or later) also lets co-bord create test cases.
 -  Select a shape, sticky note, frame or media block and link it to the SparkyTC **test cases**, **suites or sections** and **test plans** that test it (the flask button in the toolbar above the selection).
 -  Linked elements show a chip with the combined result of their tests in the current build: failed, blocked, not run, skipped or passed, worst first. Click it for each test's result, who ran it, and a link to it in SparkyTC.
 -  **Coverage** (top right of the board) treats the shapes and sticky notes with text as the steps of a flow, in the whole board or one frame: the share of steps with linked tests, how they did in a build you choose, and every step in the order of the flow. Click a step to see it on the board, or download the report as CSV.
+-  **History** (the clock next to a linked test case) opens the test case beside the board without leaving it: its section, labels, description and steps or instructions, and how it went in each test run, newest first, with the build, who ran it, notes, how each step went, evidence files and a link to it in the run. Needs SparkyTC 2.4.0 or later.
 -  Results refresh every minute.
 -  **Generate tests** (in the coverage panel, or the button of a selected frame) creates one SparkyTC test case per path through the flow, following the connectors from where it starts to where it ends (decision labels like Yes / No are part of the step). Each step is an action and the next step is what should happen. The test cases go in a section (created if missing), with a test plan for the section, and each step is linked to the test cases that go through it. Generating again only adds the new paths.
 

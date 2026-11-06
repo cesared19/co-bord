@@ -6,6 +6,7 @@ import { useServerClock, useSession } from './session'
 import { SaveTemplateDialog, TemplatePicker } from './TemplatePicker'
 import { boardLinks, canWriteSparky, type SparkyInfo, useLinkResults } from './sparky'
 import { CoveragePanel, LinkBadges, LinkEditor, LinksPopover } from './SparkyLinks'
+import { TestCasePanel } from './TestCasePanel'
 import {
 	BookOpenText,
 	ChevronLeft,
@@ -351,6 +352,8 @@ export function Canvas({
 	const allLinks = useMemo(() => boardLinks(elements.values()), [elements])
 	const linkResults = useLinkResults(projectId, allLinks, sparkyReady)
 	const [openLinks, setOpenLinks] = useState<string | null>(null)
+	/** A linked test case shown with its history, by number. */
+	const [caseHistory, setCaseHistory] = useState<number | null>(null)
 	const [panel, setPanel] = useState<'coverage' | 'retro' | 'rules' | 'comments' | 'history' | null>(null)
 	const comments = useComments(boardId, provider, !guest)
 	/** A comment being written: where it goes, and where on screen it was started. */
@@ -2031,6 +2034,10 @@ export function Canvas({
 								camera={camera}
 								elements={elements}
 								buildNumber={linkResults.build?.buildNumber}
+								onHistory={(n) => {
+									setPanel(null)
+									setCaseHistory(n)
+								}}
 								onClose={() => setOpenLinks(null)}
 							/>
 						)}
@@ -2230,7 +2237,7 @@ export function Canvas({
 							/>
 						) : null
 					})()}
-				{!panel && !guest && (
+				{!panel && caseHistory === null && !guest && (
 					<div data-ui className="absolute top-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-2">
 						<button
 							type="button"
@@ -2314,6 +2321,9 @@ export function Canvas({
 						}}
 						onClose={() => setPanel(null)}
 					/>
+				)}
+				{sparkyReady && caseHistory !== null && !panel && (
+					<TestCasePanel projectId={projectId} info={sparky!} testCaseNumber={caseHistory} onClose={() => setCaseHistory(null)} />
 				)}
 				{panel === 'history' && <HistoryPanel boardId={boardId} readOnly={readOnly} dark={dark} onClose={() => setPanel(null)} />}
 				{panel === 'rules' && (

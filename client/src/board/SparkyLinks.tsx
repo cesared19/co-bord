@@ -1,4 +1,4 @@
-import { CircleCheck, CircleDashed, CircleX, ExternalLink, FlaskConical, Search, X } from 'lucide-react'
+import { CircleCheck, CircleDashed, CircleX, ExternalLink, FlaskConical, History, Search, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { elementBounds, type ElementMap, frameContents, toScreen } from './geometry'
@@ -228,6 +228,7 @@ export function LinksPopover({
 	camera,
 	elements,
 	buildNumber,
+	onHistory,
 	onClose,
 }: {
 	el: BoardElement
@@ -236,6 +237,8 @@ export function LinksPopover({
 	camera: Camera
 	elements: ElementMap
 	buildNumber?: string
+	/** Opens a linked test case with its results in every test run. */
+	onHistory?: (testCaseNumber: number) => void
 	onClose: () => void
 }) {
 	const ref = useRef<HTMLDivElement>(null)
@@ -286,6 +289,17 @@ export function LinksPopover({
 									<StatusLabel status={r?.status} /> · {resultDetail(r)}
 								</span>
 							</span>
+							{onHistory && l.kind === 'case' && !r?.missing && (
+								<button
+									type="button"
+									title="History: how it went in each test run"
+									onClick={() => onHistory(Number(l.id))}
+									className="rounded p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white"
+								>
+									<History size={14} />
+									<span className="sr-only">History</span>
+								</button>
+							)}
 							{href && (
 								<a
 									href={href}

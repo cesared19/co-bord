@@ -38,6 +38,12 @@ export async function sparkyRequest<T>(config: Pick<SparkyConfig, 'url' | 'token
 	if (res.status === 401) throw new HttpError(502, 'SparkyTC rejected the token. Create a new one in the project settings of SparkyTC.')
 	if (res.status === 403 && body !== undefined && path !== '/results')
 		throw new HttpError(502, 'The SparkyTC token can only read. An admin can connect a Read and write token in the project settings.')
+	if (res.status === 404 && path.includes('/history')) {
+		// SparkyTC's own 404 says what's missing; older versions don't have the endpoint at all
+		const own = (data as { status?: unknown } | null)?.status === 'ERROR' && data?.message
+		if (own) throw new HttpError(404, `SparkyTC: ${data!.message}`)
+		throw new HttpError(502, 'Seeing the history of a test case needs SparkyTC 2.4.0 or later. Update SparkyTC to use it.')
+	}
 	if (!res.ok) throw new HttpError(502, `SparkyTC: ${data?.message ?? `error ${res.status}`}`)
 	if (!data || !('data' in data)) throw new HttpError(502, `${config.url} doesn't look like SparkyTC 2.2.0 or later`)
 	return data.data as T
