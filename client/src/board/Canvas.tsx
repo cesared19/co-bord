@@ -56,6 +56,9 @@ import {
 	resolveStroke,
 	rotationOf,
 	type Side,
+	sideOf,
+	BoxGrid,
+	routeRegion,
 	sidePoint,
 	toScreen,
 	toWorld,
@@ -917,7 +920,7 @@ export function Canvas({
 			} else if (type === 'connect' && isBox(selected)) {
 				drag.current = {
 					kind: 'connect',
-					from: { id: selected.id, ...sidePoint(selected, value as Side) },
+					from: { id: selected.id, ...sidePoint(selected, value as Side), side: value as Side },
 					startWorld: world,
 					current: world,
 					target: null,
@@ -958,7 +961,7 @@ export function Canvas({
 			const box = boxAt(world)
 			drag.current = {
 				kind: 'connect',
-				from: box ? { id: box.id, x: world.x, y: world.y } : { x: world.x, y: world.y },
+				from: box ? { id: box.id, x: world.x, y: world.y, ...sideOf(box, world) } : { x: world.x, y: world.y },
 				startWorld: world,
 				current: world,
 				target: null,
@@ -1190,7 +1193,8 @@ export function Canvas({
 				const other = d.which === 'from' ? conn.to : conn.from
 				const box = boxAt(world, other.id)
 				d.target = box?.id ?? null
-				const end: Endpoint = box ? { id: box.id, x: world.x, y: world.y } : { x: world.x, y: world.y }
+				// it keeps the side it's dropped on, so it doesn't land on a side other lines already use
+				const end: Endpoint = box ? { id: box.id, x: world.x, y: world.y, ...sideOf(box, world) } : { x: world.x, y: world.y }
 				store.update([[d.id, { [d.which]: end } as Partial<ConnectorElement>]])
 				rerender()
 				return
@@ -1258,7 +1262,9 @@ export function Canvas({
 			}
 			case 'connect': {
 				if (Math.hypot(world.x - d.startWorld.x, world.y - d.startWorld.y) * zoom < 8 && !d.target) break
-				const to: Endpoint = d.target ? { id: d.target, x: world.x, y: world.y } : { x: world.x, y: world.y }
+				const target = d.target ? elementsRef.current.get(d.target) : undefined
+				const to: Endpoint =
+					d.target && isBox(target) ? { id: d.target, x: world.x, y: world.y, ...sideOf(target, world) } : { x: world.x, y: world.y }
 				store.checkpoint()
 				const [id] = store.add([
 					{
@@ -1688,16 +1694,21 @@ export function Canvas({
 	}
 
 	/** The elements a connector is attached to; the same map while they don't change, so its view isn't redrawn. */
-	const endsCache = useRef(new Map<string, { from?: BoardElement; to?: BoardElement; map: ElementMap }>())
+	// elbows keep clear of the shapes around them: those come along with the ends
+	const boxGrid = useMemo(() => new BoxGrid(elements), [elements])
+	const endsCache = useRef(new Map<string, { from?: BoardElement; to?: BoardElement; near: BoardElement[]; map: ElementMap }>())
 	const endsFor = (el: ConnectorElement): ElementMap => {
 		const from = el.from.id ? elements.get(el.from.id) : undefined
 		const to = el.to.id ? elements.get(el.to.id) : undefined
+		const near = el.route === 'elbow' ? boxGrid.query(routeRegion(el, elements)).filter((b) => b !== from && b !== to) : []
 		const hit = endsCache.current.get(el.id)
-		if (hit && hit.from === from && hit.to === to) return hit.map
+		if (hit && hit.from === from && hit.to === to && hit.near.length === near.length && hit.near.every((b, i) => b === near[i]))
+			return hit.map
 		const m: ElementMap = new Map()
 		if (from) m.set(from.id, from)
 		if (to) m.set(to.id, to)
-		endsCache.current.set(el.id, { from, to, map: m })
+		for (const b of near) m.set(b.id, b)
+		endsCache.current.set(el.id, { from, to, near, map: m })
 		return m
 	}
 
@@ -1734,7 +1745,13 @@ export function Canvas({
 			z: 0,
 			type: 'connector',
 			from: d.from,
-			to: d.target ? { id: d.target, ...d.current } : d.current,
+			to: d.target
+				? {
+						id: d.target,
+						...d.current,
+						...(isBox(elements.get(d.target)) ? sideOf(elements.get(d.target) as BoxElement, d.current) : {}),
+					}
+				: d.current,
 			route: 'elbow',
 			stroke: 'auto',
 			strokeWidth: 2,

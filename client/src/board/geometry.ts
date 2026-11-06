@@ -137,10 +137,33 @@ export function sidePoint(el: Rotatable, side: Side): Point {
 	return rotatePoint(p, center(el), rotationOf(el))
 }
 
-/** The side of a (rotated) box that faces `toward`, and the axis direction a line leaves it in. */
-function exitSide(el: BoxElement | null, from: Point, toward: Point): { side: Side; vector: Point } {
+/**
+ * The side of a box nearest to a point dropped on it, or undefined near its center (then the side facing the
+ * other end is used, as before sides were kept).
+ */
+export function nearestSide(el: BoxElement, p: Point): Side | undefined {
+	const c = center(el)
+	const local = rotatePoint(p, c, -rotationOf(el))
+	const nx = (local.x - c.x) / (el.w / 2 || 1)
+	const ny = (local.y - c.y) / (el.h / 2 || 1)
+	if (Math.max(Math.abs(nx), Math.abs(ny)) < 0.35) return undefined
+	if (Math.abs(nx) >= Math.abs(ny)) return nx >= 0 ? 'right' : 'left'
+	return ny >= 0 ? 'bottom' : 'top'
+}
+
+/** `{ side }` for an endpoint dropped at `p`, or nothing near the center (no undefined values in the board). */
+export function sideOf(el: BoxElement, p: Point): { side?: Side } {
+	const side = nearestSide(el, p)
+	return side ? { side } : {}
+}
+
+/**
+ * The side of a (rotated) box a line leaves from: the one it was attached to, or else the one facing `toward`;
+ * and the axis direction it leaves in.
+ */
+function exitSide(el: BoxElement | null, from: Point, toward: Point, fixed?: Side): { side: Side; vector: Point } {
 	const r = rotationOf(el ?? undefined)
-	const side = facingSide(from, r ? rotatePoint(toward, from, -r) : toward)
+	const side = (el && fixed) || facingSide(from, r ? rotatePoint(toward, from, -r) : toward)
 	if (!r) return { side, vector: sideVector[side] }
 	const v = rotatePoint(sideVector[side], { x: 0, y: 0 }, r)
 	// elbows stay horizontal and vertical: the closest axis
@@ -188,14 +211,14 @@ export function connectorGeometry(c: ConnectorElement, elements: ElementMap): Co
 	const toAim = aim(c.to, elements)
 
 	if (c.route === 'straight') {
-		const start = fromEl ? outlinePoint(fromEl, toAim) : fromAim
-		const end = toEl ? outlinePoint(toEl, fromAim) : toAim
+		const start = fromEl ? (c.from.side ? sidePoint(fromEl, c.from.side) : outlinePoint(fromEl, toAim)) : fromAim
+		const end = toEl ? (c.to.side ? sidePoint(toEl, c.to.side) : outlinePoint(toEl, fromAim)) : toAim
 		const angle = Math.atan2(end.y - start.y, end.x - start.x)
 		return finish([start, end], `M${start.x} ${start.y}L${end.x} ${end.y}`, angle + Math.PI, angle, lerp(start, end, 0.5))
 	}
 
-	const fromExit = exitSide(fromEl, fromAim, toAim)
-	const toExit = exitSide(toEl, toAim, fromAim)
+	const fromExit = exitSide(fromEl, fromAim, toAim, c.from.side)
+	const toExit = exitSide(toEl, toAim, fromAim, c.to.side)
 	const start = fromEl ? sidePoint(fromEl, fromExit.side) : fromAim
 	const end = toEl ? sidePoint(toEl, toExit.side) : toAim
 	const ds = fromExit.vector
@@ -215,19 +238,7 @@ export function connectorGeometry(c: ConnectorElement, elements: ElementMap): Co
 		)
 	}
 
-	const horizontalStart = ds.x !== 0
-	const horizontalEnd = de.x !== 0
-	let points: Point[]
-	if (horizontalStart && horizontalEnd) {
-		const midX = (start.x + end.x) / 2
-		points = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end]
-	} else if (!horizontalStart && !horizontalEnd) {
-		const midY = (start.y + end.y) / 2
-		points = [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end]
-	} else if (horizontalStart) points = [start, { x: end.x, y: start.y }, end]
-	else points = [start, { x: start.x, y: end.y }, end]
-	points = points.filter((p, i) => i === 0 || Math.hypot(p.x - points[i - 1].x, p.y - points[i - 1].y) > 0.01)
-	if (points.length < 2) points = [start, end]
+	const points = elbowRoute(start, ds, fromEl, end, de, toEl, obstacles(c, elements))
 	const last = points[points.length - 2]
 	const first = points[1]
 	return finish(
@@ -237,6 +248,181 @@ export function connectorGeometry(c: ConnectorElement, elements: ElementMap): Co
 		Math.atan2(end.y - last.y, end.x - last.x),
 		polylineMid(points),
 	)
+}
+
+/** How far an elbow goes straight out of a side before turning, so it never runs along the shape. */
+const STUB = 20
+
+/**
+ * An elbow from `start` (leaving along `ds`) to `end` (arriving against `de`): out of each side by STUB, then the
+ * shortest of a few horizontal / vertical paths that doesn't cut through the shapes at its ends or turn back on
+ * itself, with few bends.
+ */
+/** Elements a connector's elbow keeps clear of: shapes, notes, text and media, not frames or strokes. */
+export const isObstacle = (el: BoardElement | undefined): el is BoxElement => isBox(el) && el.type !== 'frame' && el.type !== 'draw'
+
+/** How far around its ends an elbow looks for shapes in the way. */
+const ROUTE_MARGIN = 160
+
+/** The area an elbow can run through: around both ends. Shapes there are kept clear of. */
+export function routeRegion(c: ConnectorElement, elements: ElementMap): Rect {
+	const end = (e: Endpoint): Rect => {
+		const el = attached(e, elements)
+		return el ? elementBox(el) : { x: e.x, y: e.y, w: 0, h: 0 }
+	}
+	const b = unionBounds([end(c.from), end(c.to)])!
+	return { x: b.x - ROUTE_MARGIN, y: b.y - ROUTE_MARGIN, w: b.w + ROUTE_MARGIN * 2, h: b.h + ROUTE_MARGIN * 2 }
+}
+
+/** The boxes of the other shapes in a connector's region. */
+function obstacles(c: ConnectorElement, elements: ElementMap): Rect[] {
+	const region = routeRegion(c, elements)
+	const out: Rect[] = []
+	for (const el of elements.values()) {
+		if (!isObstacle(el) || el.id === c.from.id || el.id === c.to.id) continue
+		const b = elementBox(el)
+		if (intersects(region, b)) out.push(b)
+	}
+	return out
+}
+
+/** Shapes by area, so a connector finds the ones near it without looking at the whole board. */
+export class BoxGrid {
+	private cells = new Map<string, BoxElement[]>()
+	private static SIZE = 512
+
+	constructor(elements: ElementMap) {
+		for (const el of elements.values()) {
+			if (!isObstacle(el)) continue
+			const b = elementBox(el)
+			this.each(b, (key) => {
+				const list = this.cells.get(key)
+				if (list) list.push(el)
+				else this.cells.set(key, [el])
+			})
+		}
+	}
+
+	private each(r: Rect, fn: (key: string) => void) {
+		const s = BoxGrid.SIZE
+		for (let x = Math.floor(r.x / s); x <= Math.floor((r.x + r.w) / s); x++)
+			for (let y = Math.floor(r.y / s); y <= Math.floor((r.y + r.h) / s); y++) fn(`${x}:${y}`)
+	}
+
+	/** The shapes whose box touches `r`. */
+	query(r: Rect): BoxElement[] {
+		const found = new Set<BoxElement>()
+		this.each(r, (key) => {
+			for (const el of this.cells.get(key) ?? []) if (intersects(r, elementBox(el))) found.add(el)
+		})
+		return [...found]
+	}
+}
+
+function elbowRoute(
+	start: Point,
+	ds: Point,
+	fromEl: BoxElement | null,
+	end: Point,
+	de: Point,
+	toEl: BoxElement | null,
+	others: Rect[] = [],
+): Point[] {
+	const stub = (el: BoxElement | null) => (el ? STUB : 0)
+	const a = { x: start.x + ds.x * stub(fromEl), y: start.y + ds.y * stub(fromEl) }
+	const b = { x: end.x + de.x * stub(toEl), y: end.y + de.y * stub(toEl) }
+	const mx = (a.x + b.x) / 2
+	const my = (a.y + b.y) / 2
+	const middles: Point[][] = [
+		[{ x: b.x, y: a.y }],
+		[{ x: a.x, y: b.y }],
+		[
+			{ x: mx, y: a.y },
+			{ x: mx, y: b.y },
+		],
+		[
+			{ x: a.x, y: my },
+			{ x: b.x, y: my },
+		],
+	]
+	// around the shapes too: the ends' (when they face away from each other) and those in the way
+	const ends = [fromEl, toEl].filter((el): el is BoxElement => !!el).map(elementBox)
+	for (const r of [...ends, ...others]) {
+		for (const y of [r.y - STUB, r.y + r.h + STUB])
+			middles.push([
+				{ x: a.x, y },
+				{ x: b.x, y },
+			])
+		for (const x of [r.x - STUB, r.x + r.w + STUB])
+			middles.push([
+				{ x, y: a.y },
+				{ x, y: b.y },
+			])
+	}
+	let best: Point[] = [start, a, b, end]
+	let bestScore = Infinity
+	for (const middle of middles) {
+		const pts = clean([start, a, ...middle, b, end])
+		const score = routeScore(pts, ends, others, { start: !!fromEl, end: !!toEl })
+		if (score < bestScore) {
+			bestScore = score
+			best = pts
+		}
+	}
+	return best.length < 2 ? [start, end] : best
+}
+
+/** The axis-aligned box of an element, rotated ones included. */
+const elementBox = (el: BoxElement): Rect => (rotationOf(el) ? boundsOfPoints(boxCorners(el)) : { x: el.x, y: el.y, w: el.w, h: el.h })
+
+/** Without repeated points or points in the middle of a straight run. */
+function clean(points: Point[]): Point[] {
+	const out: Point[] = []
+	for (const p of points) {
+		if (out.length && Math.hypot(p.x - out[out.length - 1].x, p.y - out[out.length - 1].y) < 0.01) continue
+		if (out.length >= 2) {
+			const [q, r] = [out[out.length - 2], out[out.length - 1]]
+			const straight = (q.x === r.x && r.x === p.x) || (q.y === r.y && r.y === p.y)
+			const turnsBack = straight && (r.x - q.x) * (p.x - r.x) + (r.y - q.y) * (p.y - r.y) < 0
+			if (straight && !turnsBack) out.pop()
+		}
+		out.push(p)
+	}
+	return out
+}
+
+/** Length, plus a little for each bend, plus a lot for cutting through an end's shape or doubling back. */
+function routeScore(points: Point[], boxes: Rect[], others: Rect[], stubs: { start: boolean; end: boolean }): number {
+	let score = 0
+	for (let i = 1; i < points.length; i++) {
+		const [p, q] = [points[i - 1], points[i]]
+		score += Math.abs(q.x - p.x) + Math.abs(q.y - p.y)
+		if (p.x !== q.x && p.y !== q.y) score += 1e5
+		if (i >= 2) {
+			const o = points[i - 2]
+			score += 24
+			if ((p.x - o.x) * (q.x - p.x) + (p.y - o.y) * (q.y - p.y) < 0) score += 1e4
+		}
+		// the stubs touch their shapes; everything else stays out of them
+		const stub = (i === 1 && stubs.start) || (i === points.length - 1 && stubs.end)
+		if (!stub) for (const r of boxes) if (segmentCrosses(p, q, r)) score += 1e4
+		// other shapes: a little less, so a line that can't avoid them still goes the short way
+		for (const r of others) if (segmentCrosses(p, q, r)) score += 5e3
+	}
+	return score
+}
+
+const shrink = (r: Rect, by: number): Rect => ({ x: r.x + by, y: r.y + by, w: Math.max(0, r.w - 2 * by), h: Math.max(0, r.h - 2 * by) })
+
+/** Whether a horizontal or vertical segment passes through the inside of a box (its edges don't count). */
+function segmentCrosses(p: Point, q: Point, r: Rect): boolean {
+	const inside = shrink(r, 0.5)
+	if (p.y === q.y) {
+		const [x1, x2] = [Math.min(p.x, q.x), Math.max(p.x, q.x)]
+		return p.y > inside.y && p.y < inside.y + inside.h && x2 > inside.x && x1 < inside.x + inside.w
+	}
+	const [y1, y2] = [Math.min(p.y, q.y), Math.max(p.y, q.y)]
+	return p.x > inside.x && p.x < inside.x + inside.w && y2 > inside.y && y1 < inside.y + inside.h
 }
 
 function finish(points: Point[], path: string, startAngle: number, endAngle: number, mid: Point): ConnectorGeometry {

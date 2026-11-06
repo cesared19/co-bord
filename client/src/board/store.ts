@@ -120,7 +120,9 @@ export class BoardStore {
 			if (isBox(el)) return { ...el, id: ids.get(el.id)!, x: el.x + offset.x, y: el.y + offset.y }
 			const g = connectorGeometry(el, source)
 			const end = (e: typeof el.from, p: Point) =>
-				e.id && ids.has(e.id) ? { id: ids.get(e.id), x: p.x + offset.x, y: p.y + offset.y } : { x: p.x + offset.x, y: p.y + offset.y }
+				e.id && ids.has(e.id)
+					? { id: ids.get(e.id), x: p.x + offset.x, y: p.y + offset.y, ...(e.side ? { side: e.side } : {}) }
+					: { x: p.x + offset.x, y: p.y + offset.y }
 			return { ...el, id: ids.get(el.id)!, from: end(el.from, g.start), to: end(el.to, g.end) }
 		})
 		copies.sort((a, b) => a.z - b.z)

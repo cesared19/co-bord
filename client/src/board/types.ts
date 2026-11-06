@@ -83,6 +83,8 @@ export interface Endpoint {
 	id?: string
 	x: number
 	y: number
+	/** The side of the element it was attached to; without it, the side facing the other end. */
+	side?: 'top' | 'right' | 'bottom' | 'left'
 }
 
 export type Route = 'straight' | 'elbow' | 'curved'
