@@ -4,14 +4,14 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.14.0)
+## Features (0.14.1)
 
 ### Boards
 
 -  **Infinite canvas**: pan with the Hand tool, by holding Space, with the middle button, the trackpad or one finger on touch screens; zoom with Ctrl + wheel, a pinch or the zoom controls. **Fit** (Shift 1) shows everything, Shift 2 the selection.
 -  Text that doesn't fit a sticky note or shape gets smaller until it does, keeping whole words on each line (also in PNG and PDF downloads); text boxes grow instead.
 -  **Sticky notes, text and shapes**: flowchart shapes (process, rounded, ellipse, decision, start / end, input / output, preparation, document, database, triangle). Click to add one at its default size, or drag to draw it. Double-click the board to write text anywhere.
--  **Connectors**: drag from a shape's **+** handles, or use the Connector tool, from one element to another. They stay attached when elements move, and can be straight, elbow or curved, with arrows, dashes, color, width and a label. Drag a connector's end to attach it somewhere else.
+-  **Connectors**: drag from a shape's **+** handles, or use the Connector tool, from one element to another. They stay attached when elements move, and can be straight, elbow or curved, with arrows, dashes, color, width and a label. Drag a connector's end to attach it somewhere else: it keeps the side it's dropped on (drop it in the middle of a shape to let co-bord pick the side facing the other end). Elbow lines step out of each side before turning and go around the shapes in their way.
 -  **Editing**: select with a click, Shift + click or a selection box; move, resize (Shift keeps the proportions; sticky notes always do), change colors, text size, bold and alignment from the toolbar above the selection, bring to front or send to back, duplicate (Ctrl D; a duplicated frame goes beside the original, with its contents), copy and paste (also between boards), delete, and move with the arrow keys.
 -  **Alignment guides**: while moving or resizing, elements line up with the edges and centers of the ones around them, and space evenly between neighbors, with guides showing how. **Snap to the grid** (the grid button by the zoom) puts them on a 20-pixel grid instead. Hold Alt to move freely.
 -  **Rotate** shapes, sticky notes, text and media with the round handle by the top right corner (Shift for 15° steps; it settles at 0°, 90°, 180° and 270°). Connectors stay attached. **Straighten** in the toolbar sets it back to 0°. Frames don't rotate.

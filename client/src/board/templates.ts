@@ -177,7 +177,12 @@ function workflow(): BoardElement[] {
 		connect(decision, next, 'Yes'),
 		connect(next, end),
 		connect(decision, rework, 'No'),
-		connect(rework, step),
+		// back into the bottom of the step, clear of the line that leaves it
+		{
+			...connect(rework, step),
+			from: { id: rework.id, x: rework.x, y: rework.y, side: 'left' },
+			to: { id: step.id, x: step.x, y: step.y, side: 'bottom' },
+		},
 	]
 }
 
