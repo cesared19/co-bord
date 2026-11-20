@@ -149,6 +149,31 @@ export function sparkyRoutes(app: FastifyInstance, ctx: Ctx) {
 		return cached(key, () => sparkyRequest(config, '/results', request))
 	})
 
+	/** Test cases generated from this board's flows before, in a section: the ones that may no longer be paths. */
+	async function generatedCases(config: { url: string; token: string }, boardId: string, sectionPath: string) {
+		const prefix = `cobord:${boardId}:path:`
+		const params = new URLSearchParams({ sourceRefPrefix: prefix, limit: '500' })
+		const items = await sparkyRequest<
+			{ testCaseNumber: number; title: string; sectionPath?: string; sourceRef?: string; webPath: string }[]
+		>(config, `/test-cases?${params}`)
+		// SparkyTC before 2.6.0 ignores the prefix: check it here too
+		return items.filter((c) => c.sourceRef?.startsWith(prefix) && c.sectionPath === sectionPath)
+	}
+
+	app.get<{ Params: { id: string }; Querystring: { section?: string } }>('/api/boards/:id/sparkytc/generated', async (req) => {
+		const user = await requireUser(ctx, req)
+		if (!isUuid(req.params.id)) throw notFound('Board not found')
+		const access = await boardAccess(db, user, req.params.id)
+		if (!atLeast(access.role, 'editor')) throw forbidden()
+		const config = await connection(access.projectId)
+		const section = (req.query.section ?? '').trim().slice(0, 500)
+		if (!section) return { cases: [] }
+		const cases = await generatedCases(config, req.params.id, section)
+		return {
+			cases: cases.map((c) => ({ testCaseNumber: c.testCaseNumber, title: c.title, sourceRef: c.sourceRef, webPath: c.webPath })),
+		}
+	})
+
 	/**
 	 * Creates test cases from the paths of a flow, in one section, and a plan with that section. SparkyTC returns
 	 * what already exists for the same source references, so generating again only adds the new paths.
@@ -163,6 +188,9 @@ export function sparkyRoutes(app: FastifyInstance, ctx: Ctx) {
 		const sectionPath = str(body, 'sectionPath', { min: 1, max: 500 })
 		const planName = str(body, 'planName', { max: 200, optional: true })
 		const planSourceRef = str(body, 'planSourceRef', { max: 200, optional: true })
+		const rawArchive = body.archive ?? []
+		if (!Array.isArray(rawArchive) || rawArchive.length > 500) throw badRequest('archive must be a list of test case numbers')
+		const archive = [...new Set(rawArchive.filter((n): n is number => Number.isInteger(n) && n > 0))]
 		const rawCases = body.cases
 		if (!Array.isArray(rawCases) || !rawCases.length) throw badRequest('There are no paths to create tests from')
 		if (rawCases.length > 100) throw badRequest('At most 100 test cases at a time')
@@ -210,8 +238,31 @@ export function sparkyRoutes(app: FastifyInstance, ctx: Ctx) {
 				sectionIDs: [section.sectionID],
 				...(planSourceRef ? { sourceRef: planSourceRef } : {}),
 			})
+		// earlier paths of this flow that no longer exist: only test cases this board generated in this section
+		let archived: number[] = []
+		let archiveError: string | undefined
+		if (archive.length) {
+			try {
+				const current = new Set(cases.map((c) => c.sourceRef))
+				const mine = new Set(
+					(await generatedCases(config, req.params.id, section.path))
+						.filter((c) => !current.has(c.sourceRef!))
+						.map((c) => c.testCaseNumber),
+				)
+				const numbers = archive.filter((n) => mine.has(n))
+				if (numbers.length)
+					archived = (await sparkyRequest<{ archived: number[] }>(config, '/test-cases/archive', { testCaseNumbers: numbers })).archived
+			} catch (e) {
+				const message = (e as Error).message
+				archiveError = /error 40[45]|Not Found|No static resource/i.test(message)
+					? 'Archiving old test cases needs SparkyTC 2.6.0 or later. The new ones were created; remove the old ones in SparkyTC.'
+					: message
+			}
+		}
 		for (const key of cache.keys()) if (key.startsWith(`${access.projectId}:`)) cache.delete(key)
 		return {
+			archived,
+			...(archiveError ? { archiveError } : {}),
 			section: { id: section.sectionID, path: section.path, webPath: section.webPath },
 			cases: created,
 			plan: plan && { id: plan.testPlanID, name: plan.name, created: plan.created !== false, webPath: plan.webPath },

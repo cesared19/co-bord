@@ -13,6 +13,8 @@ export interface FlowPath {
 	/** The steps of the flow it goes through, in order. */
 	nodes: string[]
 	title: string
+	/** Where it starts and ends, and the decisions it takes. */
+	description: string
 	steps: PathStep[]
 	/** Stable for the same way through the flow, so generating again finds the same test case. */
 	sourceRef: string
@@ -91,6 +93,19 @@ export function flowPaths(
 	return { paths, truncated, unconnected }
 }
 
+/** How a step of the flow reads in a test case, by its shape. */
+type Kind = 'decision' | 'terminal' | 'step'
+
+const kindOf = (el: TextBox): Kind =>
+	el.type === 'shape' && el.shape === 'diamond'
+		? 'decision'
+		: el.type === 'shape' && (el.shape === 'terminator' || el.shape === 'ellipse')
+			? 'terminal'
+			: 'step'
+
+/** Bumped when the way paths are written changes, so generating again replaces the old test cases. */
+const WRITING = 'v2'
+
 function buildPath(
 	nodes: string[],
 	labels: string[],
@@ -99,24 +114,60 @@ function buildPath(
 	byId: Map<string, TextBox>,
 	o: { boardId: string; scopeName: string },
 ): FlowPath {
-	const text = (id: string) => textOf(byId.get(id)!)
-	const withLabel = (id: string, label: string | undefined) => (label ? `${text(id)} (${label})` : text(id))
-	const steps: PathStep[] = []
-	for (let i = 0; i < nodes.length - 1; i++) steps.push({ action: withLabel(nodes[i], labels[i]), expected: text(nodes[i + 1]) })
-	if (back) steps.push({ action: withLabel(nodes[nodes.length - 1], back.label), expected: `Back to: ${text(back.to)}` })
+	const el = (id: string) => byId.get(id)!
+	const text = (id: string) => textOf(el(id))
+	const kind = (id: string) => kindOf(el(id))
+	const last = nodes.length - 1
 
+	// a start or end shape (Start, END) is where the test begins or finishes, not something to do
+	const startsAtTerminal = kind(nodes[0]) === 'terminal' && nodes.length > 1
+	const endsAtTerminal = !back && last > 0 && kind(nodes[last]) === 'terminal'
+	const action = (id: string, label: string | undefined) =>
+		kind(id) === 'decision'
+			? label
+				? `${text(id)} → choose "${label}"`
+				: `Answer: ${text(id)}`
+			: label
+				? `${text(id)} (${label})`
+				: text(id)
+	const expected = (id: string) =>
+		kind(id) === 'decision'
+			? `"${text(id)}" is asked`
+			: kind(id) === 'terminal'
+				? `The flow ends at "${text(id)}"`
+				: `"${text(id)}" comes next`
+
+	const steps: PathStep[] = []
+	for (let i = startsAtTerminal ? 1 : 0; i < last; i++)
+		steps.push({ action: action(nodes[i], labels[i]), expected: expected(nodes[i + 1]) })
+	if (back) steps.push({ action: action(nodes[last], back.label), expected: `Goes back to "${text(back.to)}"` })
+	else if (!endsAtTerminal) steps.push({ action: action(nodes[last], undefined), expected: 'Completed: the flow has no further step' })
+	// a path that is only Start → End still gets its one step
+	if (!steps.length) steps.push({ action: text(nodes[0]), expected: expected(nodes[last]) })
+
+	// the decisions taken tell the paths apart
+	const decisions = nodes.flatMap((id, i) =>
+		kind(id) === 'decision' && (labels[i] || (i === last && back?.label)) ? [`${text(id)} = ${labels[i] || back?.label}`] : [],
+	)
+	const from = text(nodes[0])
+	const to = back ? `back to ${text(back.to)}` : text(nodes[last])
 	const prefix = o.scopeName ? `${o.scopeName}: ` : ''
-	const parts = nodes.map((id, i) => withLabel(id, labels[i]))
-	if (back) parts.push(`back to ${text(back.to)}`)
-	let route = parts.join(' → ')
-	if (route.length > 200) {
-		// keep the start, the branches taken and the end
-		const branches = nodes.slice(1, -1).flatMap((id, i) => (labels[i + 1] ? [withLabel(id, labels[i + 1])] : []))
-		route = [parts[0], ...branches, parts[parts.length - 1]].join(' → … ')
-	}
+	const route = `${from} → ${to}${decisions.length ? ` (${decisions.join('; ')})` : ''}`
 	const title = `${prefix}${route}`.slice(0, 480)
-	return { nodes, title, steps, sourceRef: `cobord:${o.boardId}:path:${hash([...nodes, '|', ...edges].join(','))}` }
+	const description = [
+		`A path through ${o.scopeName || 'the flow'}, from "${from}" to ${back ? `"${text(nodes[last])}", which goes back to "${text(back.to)}"` : `"${text(nodes[last])}"`}.`,
+		decisions.length ? `Decisions: ${decisions.join('; ')}.` : '',
+	]
+		.filter(Boolean)
+		.join('\n')
+
+	// the same way through the flow, with the same words, is the same test case
+	const key = [WRITING, ...nodes, '|', ...edges, '|', ...nodes.map(text), '|', ...labels, '|', back?.label ?? ''].join('\u0000')
+	return { nodes, title, description, steps, sourceRef: `${pathRefPrefix(o.boardId)}${hash(key)}` }
 }
+
+/** What every generated test case of a board starts its sourceRef with, to find them again. */
+export const pathRefPrefix = (boardId: string) => `cobord:${boardId}:path:`
 
 /** A name for a SparkyTC section path: its parts are separated by " / ", so slashes inside a name become dashes. */
 export const sectionPart = (name: string) => name.replace(/\//g, '-').replace(/\s+/g, ' ').trim() || 'Untitled'

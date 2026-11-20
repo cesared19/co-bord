@@ -4,7 +4,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 
 ![A board with a login flowchart, a sticky note and a teammate's cursor](./documentation/assets/board.png)
 
-## Features (0.14.1)
+## Features (0.15.0)
 
 ### Boards
 
@@ -64,7 +64,7 @@ Collaborative boards for teams: flowcharts, design documents and retrospectives,
 -  **Coverage** (top right of the board) treats the shapes and sticky notes with text as the steps of a flow, in the whole board or one frame: the share of steps with linked tests, how they did in a build you choose, and every step in the order of the flow. Click a step to see it on the board, or download the report as CSV.
 -  **History** (the clock next to a linked test case) opens the test case beside the board without leaving it: its section, labels, description and steps or instructions, and how it went in each test run, newest first, with the build, who ran it, notes, how each step went, evidence files and a link to it in the run. Needs SparkyTC 2.4.0 or later.
 -  Results refresh every minute.
--  **Generate tests** (in the coverage panel, or the button of a selected frame) creates one SparkyTC test case per path through the flow, following the connectors from where it starts to where it ends (decision labels like Yes / No are part of the step). Each step is an action and the next step is what should happen. The test cases go in a section (created if missing), with a test plan for the section, and each step is linked to the test cases that go through it. Generating again only adds the new paths.
+-  **Generate tests** (in the coverage panel, or the button of a selected frame) creates one SparkyTC test case per path through the flow, following the connectors from where it starts to where it ends (decision labels like Yes / No are part of the step). Each step is an action and the next step is what should happen. The test cases go in a section (created if missing), with a test plan for the section, and each step is linked to the test cases that go through it. Decisions (diamonds) become a choice in the step ("choose YES"), start and end shapes are where the test begins and finishes, and each test case says where it starts and ends and which decisions it takes. Generating again only adds the new or changed paths, and offers to archive the test cases generated before that aren't a path anymore (SparkyTC 2.6.0 or later): they leave the section and the plan, runs keep their results, and their links on the board go.
 
 ### Confluence
 
