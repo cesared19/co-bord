@@ -14,11 +14,13 @@ let sparkyUrl: string
 const sparkyCalls: { url: string; body: unknown }[] = []
 /** Status of each test case in the fake SparkyTC. */
 const caseStatus = new Map<number, string>([[1, 'PASS']])
+/** Whether the fake SparkyTC archives test cases (2.6.0 and later). */
+const sparkyArchives = { on: true }
 
 /** A stand-in for SparkyTC's integration API, with writes for the token stc_write. */
 async function startFakeSparky() {
 	const app = Fastify()
-	const cases = new Map<string, { testCaseNumber: number; title: string; webPath: string }>()
+	const cases = new Map<string, { testCaseNumber: number; title: string; webPath: string; sectionPath?: string; archived?: boolean }>()
 	const plans = new Map<string, { testPlanID: string; name: string; webPath: string }>()
 	let nextCase = 100
 	app.addHook('onRequest', async (req, reply) => {
@@ -59,12 +61,28 @@ async function startFakeSparky() {
 		return { data: { sectionID: '33333333-3333-3333-3333-333333333333', path, name: path.split(' / ').pop(), webPath: '/s' } }
 	})
 	app.post('/api/integration/v1/test-cases', async (req) => {
-		const body = req.body as { title: string; sourceRef?: string }
+		const body = req.body as { title: string; sourceRef?: string; sectionPath?: string }
 		const existing = body.sourceRef ? cases.get(body.sourceRef) : undefined
-		if (existing) return { data: { ...existing, created: false } }
-		const created = { testCaseNumber: nextCase++, title: body.title, webPath: `/test-cases/${nextCase}` }
+		if (existing && !existing.archived) return { data: { ...existing, created: false } }
+		const created = { testCaseNumber: nextCase++, title: body.title, webPath: `/test-cases/${nextCase}`, sectionPath: body.sectionPath }
 		if (body.sourceRef) cases.set(body.sourceRef, created)
 		return { data: { ...created, created: true } }
+	})
+	app.get<{ Querystring: { sourceRefPrefix?: string } }>('/api/integration/v1/test-cases', async (req) => ({
+		data: [...cases.entries()]
+			.filter(([ref, c]) => !c.archived && ref.startsWith(req.query.sourceRefPrefix ?? ''))
+			.map(([sourceRef, c]) => ({ ...c, sourceRef })),
+	}))
+	app.post('/api/integration/v1/test-cases/archive', async (req, reply) => {
+		if (!sparkyArchives.on) return reply.status(404).send({ timestamp: 'now', status: 404, error: 'Not Found', path: req.url })
+		const numbers = (req.body as { testCaseNumbers: number[] }).testCaseNumbers
+		const archived: number[] = []
+		for (const c of cases.values())
+			if (numbers.includes(c.testCaseNumber) && !c.archived) {
+				c.archived = true
+				archived.push(c.testCaseNumber)
+			}
+		return { data: { archived, skipped: [] } }
 	})
 	app.post('/api/integration/v1/test-plans', async (req) => {
 		const body = req.body as { name: string; sourceRef?: string }
@@ -436,5 +454,33 @@ describe('card rules', () => {
 		expect(again.body.cases.map((c: { created: boolean }) => c.created)).toEqual([false, false])
 		expect(again.body.plan.created).toBe(false)
 		expect((await eddie.post(url, { ...body, cases: [] })).status).toBe(400)
+
+		// the flow changed: path b is gone and c is new. b is listed as generated before, and archived
+		const generated = (await eddie.get(`/api/boards/${board.id}/sparkytc/generated?section=${encodeURIComponent('co-bord / Flow')}`)).body
+			.cases
+		expect(generated.map((c: { title: string }) => c.title)).toEqual(['Flow: Start → OK', 'Flow: Start → Error'])
+		const b = generated[1].testCaseNumber
+		const changed = {
+			...body,
+			cases: [
+				body.cases[0],
+				{ title: 'Flow: Start → Retry', sourceRef: `cobord:${board.id}:path:c`, steps: [{ action: 'Start', expected: 'Retry' }] },
+			],
+		}
+		// a number that isn't a stale path of this board (here, path a, still current) is never sent
+		const updated = await eddie.post(url, { ...changed, archive: [b, first.body.cases[0].testCaseNumber, 999] })
+		expect(updated.body.archived).toEqual([b])
+		expect(sparkyCalls.filter((c) => c.url === 'POST /api/integration/v1/test-cases/archive').pop()?.body).toEqual({ testCaseNumbers: [b] })
+		const after = (await eddie.get(`/api/boards/${board.id}/sparkytc/generated?section=${encodeURIComponent('co-bord / Flow')}`)).body.cases
+		expect(after.map((c: { title: string }) => c.title)).toEqual(['Flow: Start → OK', 'Flow: Start → Retry'])
+		expect((await vera.get(`/api/boards/${board.id}/sparkytc/generated?section=x`)).status).toBe(403)
+
+		// a SparkyTC without archiving: the test cases are created, with a message
+		sparkyArchives.on = false
+		const old = await eddie.post(url, { ...body, archive: [after[1].testCaseNumber] })
+		expect(old.status).toBe(200)
+		expect(old.body.archived).toEqual([])
+		expect(old.body.archiveError).toContain('SparkyTC 2.6.0')
+		sparkyArchives.on = true
 	})
 })
