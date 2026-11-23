@@ -212,21 +212,28 @@ export function sparkyRoutes(app: FastifyInstance, ctx: Ctx) {
 			}
 		})
 		const section = await sparkyRequest<{ sectionID: string; path: string; webPath: string }>(config, '/sections', { path: sectionPath })
-		const created: { sourceRef: string; testCaseNumber: number; title: string; created: boolean; webPath: string }[] = []
+		const created: { sourceRef: string; testCaseNumber: number; title: string; created: boolean; updated?: boolean; webPath: string }[] = []
 		for (const c of cases) {
-			const r = await sparkyRequest<{ testCaseNumber: number; title: string; created?: boolean; webPath: string }>(config, '/test-cases', {
-				title: c.title,
-				...(c.description ? { description: c.description } : {}),
-				sectionPath: section.path,
-				format: c.steps.length ? 'STEPS' : 'TEXT',
-				steps: c.steps.map((s) => (s.expected ? s : { action: s.action })),
-				sourceRef: c.sourceRef,
-			})
+			// a path already generated is updated with its current words (SparkyTC 2.7.0; earlier ones return it as it was)
+			const r = await sparkyRequest<{ testCaseNumber: number; title: string; created?: boolean; updated?: boolean; webPath: string }>(
+				config,
+				'/test-cases',
+				{
+					updateExisting: true,
+					title: c.title,
+					...(c.description ? { description: c.description } : {}),
+					sectionPath: section.path,
+					format: c.steps.length ? 'STEPS' : 'TEXT',
+					steps: c.steps.map((s) => (s.expected ? s : { action: s.action })),
+					sourceRef: c.sourceRef,
+				},
+			)
 			created.push({
 				sourceRef: c.sourceRef,
 				testCaseNumber: r.testCaseNumber,
 				title: r.title,
 				created: r.created !== false,
+				...(typeof r.updated === 'boolean' ? { updated: r.updated } : {}),
 				webPath: r.webPath,
 			})
 		}

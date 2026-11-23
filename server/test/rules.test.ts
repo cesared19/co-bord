@@ -14,6 +14,8 @@ let sparkyUrl: string
 const sparkyCalls: { url: string; body: unknown }[] = []
 /** Status of each test case in the fake SparkyTC. */
 const caseStatus = new Map<number, string>([[1, 'PASS']])
+/** Whether the fake SparkyTC updates test cases (2.7.0 and later). */
+const sparkyUpdates = { on: true }
 /** Whether the fake SparkyTC archives test cases (2.6.0 and later). */
 const sparkyArchives = { on: true }
 
@@ -61,9 +63,14 @@ async function startFakeSparky() {
 		return { data: { sectionID: '33333333-3333-3333-3333-333333333333', path, name: path.split(' / ').pop(), webPath: '/s' } }
 	})
 	app.post('/api/integration/v1/test-cases', async (req) => {
-		const body = req.body as { title: string; sourceRef?: string; sectionPath?: string }
+		const body = req.body as { title: string; sourceRef?: string; sectionPath?: string; updateExisting?: boolean }
 		const existing = body.sourceRef ? cases.get(body.sourceRef) : undefined
-		if (existing && !existing.archived) return { data: { ...existing, created: false } }
+		if (existing && !existing.archived) {
+			if (!body.updateExisting || !sparkyUpdates.on) return { data: { ...existing, created: false } }
+			const updated = existing.title !== body.title
+			existing.title = body.title
+			return { data: { ...existing, created: false, updated } }
+		}
 		const created = { testCaseNumber: nextCase++, title: body.title, webPath: `/test-cases/${nextCase}`, sectionPath: body.sectionPath }
 		if (body.sourceRef) cases.set(body.sourceRef, created)
 		return { data: { ...created, created: true } }
@@ -452,13 +459,26 @@ describe('card rules', () => {
 		})
 		const again = await eddie.post(url, body)
 		expect(again.body.cases.map((c: { created: boolean }) => c.created)).toEqual([false, false])
+		expect(again.body.cases.map((c: { updated: boolean }) => c.updated)).toEqual([false, false])
+		expect(sparkyCalls.filter((c) => c.url === 'POST /api/integration/v1/test-cases').pop()?.body).toMatchObject({ updateExisting: true })
+		// a step renamed on the board: the same test case, updated
+		const renamed = await eddie.post(url, { ...body, cases: [{ ...body.cases[0], title: 'Flow: Begin → OK' }, body.cases[1]] })
+		expect(renamed.body.cases.map((c: { created: boolean; updated: boolean }) => [c.created, c.updated])).toEqual([
+			[false, true],
+			[false, false],
+		])
+		expect(renamed.body.cases[0].testCaseNumber).toBe(first.body.cases[0].testCaseNumber)
+		// a SparkyTC that can't update says nothing about it
+		sparkyUpdates.on = false
+		expect((await eddie.post(url, body)).body.cases[0].updated).toBeUndefined()
+		sparkyUpdates.on = true
 		expect(again.body.plan.created).toBe(false)
 		expect((await eddie.post(url, { ...body, cases: [] })).status).toBe(400)
 
 		// the flow changed: path b is gone and c is new. b is listed as generated before, and archived
 		const generated = (await eddie.get(`/api/boards/${board.id}/sparkytc/generated?section=${encodeURIComponent('co-bord / Flow')}`)).body
 			.cases
-		expect(generated.map((c: { title: string }) => c.title)).toEqual(['Flow: Start → OK', 'Flow: Start → Error'])
+		expect(generated.map((c: { title: string }) => c.title)).toEqual(['Flow: Begin → OK', 'Flow: Start → Error'])
 		const b = generated[1].testCaseNumber
 		const changed = {
 			...body,
