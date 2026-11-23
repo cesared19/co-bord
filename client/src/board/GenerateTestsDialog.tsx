@@ -13,7 +13,7 @@ interface GenerateResult {
 	archived?: number[]
 	archiveError?: string
 	section: { id: string; path: string; webPath: string }
-	cases: { sourceRef: string; testCaseNumber: number; title: string; created: boolean; webPath: string }[]
+	cases: { sourceRef: string; testCaseNumber: number; title: string; created: boolean; updated?: boolean; webPath: string }[]
 	plan: { id: string; name: string; created: boolean; webPath: string } | null
 }
 
@@ -130,10 +130,13 @@ export function GenerateTestsDialog({
 					const el = store.get(id)
 					if (!el || el.type === 'connector') continue
 					const current = el.links ?? []
+					// links already there take the test case's current title
+					const relabeled = current.map((c) => links.find((l) => l.kind === c.kind && l.id === c.id) ?? c)
 					const missing = links.filter(
 						(l, i) => !current.some((c) => c.kind === l.kind && c.id === l.id) && links.findIndex((x) => x.id === l.id) === i,
 					)
-					if (missing.length) updates.push([id, { links: [...current, ...missing] }])
+					const renamed = relabeled.some((l, i) => l.label !== current[i].label)
+					if (missing.length || renamed) updates.push([id, { links: [...relabeled, ...missing] }])
 				}
 				if (updates.length) {
 					store.checkpoint()
@@ -152,6 +155,10 @@ export function GenerateTestsDialog({
 	const input = 'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900'
 	if (done) {
 		const created = done.cases.filter((c) => c.created).length
+		const updated = done.cases.filter((c) => c.updated).length
+		const unchanged = done.cases.length - created - updated
+		// a SparkyTC before 2.7.0 doesn't say whether it updated
+		const cantUpdate = done.cases.some((c) => !c.created && c.updated === undefined)
 		const sectionUrl = sparkyHref(info, done.section.webPath)
 		const planUrl = done.plan ? sparkyHref(info, done.plan.webPath) : undefined
 		return (
@@ -161,12 +168,19 @@ export function GenerateTestsDialog({
 						<CheckCircle2 size={18} className="mt-0.5 shrink-0 text-green-600" />
 						<span>
 							{created} new test {created === 1 ? 'case' : 'cases'}
-							{done.cases.length > created ? `, ${done.cases.length - created} already there` : ''} in {done.section.path}
+							{updated ? `, ${updated} updated` : ''}
+							{unchanged ? `, ${unchanged} ${cantUpdate ? 'already there' : 'unchanged'}` : ''} in {done.section.path}
 							{done.plan ? `, ${done.plan.created ? 'and the test plan' : 'in the test plan'} ${done.plan.name}` : ''}.
 							{!!done.archived?.length &&
 								` ${done.archived.length} old test ${done.archived.length === 1 ? 'case' : 'cases'} archived, with ${done.archived.length === 1 ? 'its' : 'their'} links.`}
 						</span>
 					</p>
+					{cantUpdate && (
+						<p className="rounded-md bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+							Updating the test cases already there with the flow's current steps needs SparkyTC 2.7.0 or later. They were left as they
+							were.
+						</p>
+					)}
 					{done.archiveError && (
 						<p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
 							{done.archiveError}
@@ -333,7 +347,8 @@ export function GenerateTestsDialog({
 					</div>
 				)}
 				<p className="text-xs text-gray-500">
-					Generating again adds only the new or changed paths; the test cases already created are reused.
+					Generating again adds the new paths and updates the test cases already created with the flow's current steps, keeping their
+					numbers and results.
 				</p>
 				<ErrorText>{error}</ErrorText>
 				<div className="flex justify-end gap-2">

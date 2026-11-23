@@ -103,9 +103,6 @@ const kindOf = (el: TextBox): Kind =>
 			? 'terminal'
 			: 'step'
 
-/** Bumped when the way paths are written changes, so generating again replaces the old test cases. */
-const WRITING = 'v2'
-
 function buildPath(
 	nodes: string[],
 	labels: string[],
@@ -161,8 +158,9 @@ function buildPath(
 		.filter(Boolean)
 		.join('\n')
 
-	// the same way through the flow, with the same words, is the same test case
-	const key = [WRITING, ...nodes, '|', ...edges, '|', ...nodes.map(text), '|', ...labels, '|', back?.label ?? ''].join('\u0000')
+	// the same steps and connectors are the same test case, whatever their words say: renaming a step updates it.
+	// The same key as earlier versions, so test cases generated before are updated too.
+	const key = [...nodes, '|', ...edges].join(',')
 	return { nodes, title, description, steps, sourceRef: `${pathRefPrefix(o.boardId)}${hash(key)}` }
 }
 
